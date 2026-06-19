@@ -36,6 +36,15 @@
   });
   const fmtDateOnly = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
+  function fmtDuration(ms) {
+    if (!ms || ms < 0) return '—';
+    const totalMin = Math.max(0, Math.round(ms / 60000));
+    if (totalMin < 60) return `${totalMin}m`;
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  }
+
   // ---------- Unit conversion
   const kgToLb = (kg) => kg == null ? null : kg * 2.20462;
   const lbToKg = (lb) => lb == null ? null : lb / 2.20462;
@@ -684,6 +693,15 @@
     const subParts = [];
     if (program) subParts.push(program.name);
     if (w.exercises.length) subParts.push(`${w.exercises.length} exercise${w.exercises.length !== 1 ? 's' : ''}`);
+    const durMs = (w.startedAt && w.completedAt) ? (w.completedAt - w.startedAt) : null;
+
+    const metrics = [
+      el('div', {}, [el('b', {}, String(totalSets)), ' sets']),
+      el('div', {}, [el('b', {}, volume.toLocaleString()), ` ${DB.getSettings().unit}`]),
+    ];
+    if (durMs != null) {
+      metrics.push(el('div', {}, [el('b', {}, fmtDuration(durMs))]));
+    }
 
     return el('div', {
       class: 'history-card glass',
@@ -694,10 +712,7 @@
         el('div', { class: 'history-date' }, fmtDate(w.completedAt)),
       ]),
       el('div', { class: 'history-sub' }, subParts.join(' · ') || ' '),
-      el('div', { class: 'history-metrics' }, [
-        el('div', {}, [el('b', {}, String(totalSets)), ' sets']),
-        el('div', {}, [el('b', {}, volume.toLocaleString()), ` ${DB.getSettings().unit}`]),
-      ]),
+      el('div', { class: 'history-metrics' }, metrics),
     ]);
   }
 
