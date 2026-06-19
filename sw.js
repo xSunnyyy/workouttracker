@@ -1,5 +1,5 @@
 // Service worker for Lift PWA — offline-first cache
-const CACHE = 'lift-v1';
+const CACHE = 'lift-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const ASSETS = [
   './app.js',
   './db.js',
   './seed.js',
+  './illustrations.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',

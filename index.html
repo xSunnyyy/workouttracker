@@ -167,24 +167,7 @@
 
       <div class="glass card">
         <h3 class="card-title">Body metrics</h3>
-        <div class="metric-grid">
-          <label class="field">
-            <span>Height (cm)</span>
-            <input type="number" id="m-height" inputmode="decimal" placeholder="178" />
-          </label>
-          <label class="field">
-            <span>Weight (kg)</span>
-            <input type="number" id="m-weight" inputmode="decimal" placeholder="75" />
-          </label>
-          <label class="field">
-            <span>Goal (kg)</span>
-            <input type="number" id="m-goal" inputmode="decimal" placeholder="72" />
-          </label>
-          <label class="field field-wide">
-            <span>Notes</span>
-            <textarea id="m-notes" rows="2" placeholder="Cutting until summer…"></textarea>
-          </label>
-        </div>
+        <div id="metrics-fields"></div>
         <button class="btn btn-primary" id="save-metrics">Save metrics</button>
       </div>
 
@@ -246,6 +229,7 @@
   <div id="toast" class="toast" aria-live="polite"></div>
 
   <script src="seed.js"></script>
+  <script src="illustrations.js"></script>
   <script src="db.js"></script>
   <script src="app.js"></script>
   <script>

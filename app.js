@@ -36,6 +36,35 @@
   });
   const fmtDateOnly = (ts) => new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
+  // ---------- Unit conversion
+  const kgToLb = (kg) => kg == null ? null : kg * 2.20462;
+  const lbToKg = (lb) => lb == null ? null : lb / 2.20462;
+  const cmToIn = (cm) => cm == null ? null : cm / 2.54;
+  const inToCm = (inches) => inches == null ? null : inches * 2.54;
+  const roundTo = (n, places = 1) => {
+    if (n == null || isNaN(n)) return null;
+    const f = Math.pow(10, places);
+    return Math.round(n * f) / f;
+  };
+
+  // SVG body thumb helper — returns an element wrapping the SVG markup.
+  function bodyThumb(exercise, opts = {}) {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = ILLUSTRATIONS.bodySVG({
+      view: exercise.view || 'front',
+      active: exercise.primary || [],
+      ...opts,
+    });
+    return wrap.firstElementChild;
+  }
+  function equipBadge(equipment) {
+    const wrap = document.createElement('div');
+    wrap.className = 'equip-badge';
+    wrap.title = equipment || '';
+    wrap.innerHTML = ILLUSTRATIONS.equipIcon(equipment);
+    return wrap;
+  }
+
   function toast(msg) {
     const t = $('#toast');
     t.textContent = msg;
@@ -55,6 +84,8 @@
     DB.setSetting('unit', unit);
     $$('#unit-seg button').forEach((b) => b.classList.toggle('active', b.dataset.unit === unit));
     $$('.unit').forEach((u) => (u.textContent = unit));
+    // Re-render metrics if settings page is open so labels switch immediately
+    if ($('#metrics-fields')) renderMetricsFields();
   }
 
   // ---------- Navigation
@@ -256,8 +287,10 @@
       selectedIds.forEach((id, idx) => {
         const ex = DB.getExercise(id);
         if (!ex) return;
+        const thumb = el('div', { class: 'picker-emoji' });
+        thumb.appendChild(bodyThumb(ex));
         selectedWrap.appendChild(el('div', { class: 'picker-item' }, [
-          el('div', { class: 'picker-emoji' }, ex.emoji || '🏋️'),
+          thumb,
           el('div', { style: 'flex:1' }, [
             el('div', { class: 'name' }, ex.name),
             el('div', { class: 'muscle' }, ex.muscleGroup),
@@ -339,6 +372,8 @@
         return;
       }
       filtered.forEach((ex) => {
+        const thumb = el('div', { class: 'picker-emoji' });
+        thumb.appendChild(bodyThumb(ex));
         const item = el('div', {
           class: 'picker-item' + (selected.has(ex.id) ? ' selected' : ''),
           onclick: () => {
@@ -347,7 +382,7 @@
             renderList();
           },
         }, [
-          el('div', { class: 'picker-emoji' }, ex.emoji || '🏋️'),
+          thumb,
           el('div', { style: 'flex:1; min-width:0' }, [
             el('div', { class: 'name' }, ex.name),
             el('div', { class: 'muscle' }, `${ex.muscleGroup} · ${ex.equipment}`),
@@ -386,7 +421,6 @@
           return {
             exerciseId: exId,
             exerciseName: ex ? ex.name : 'Unknown',
-            emoji: ex ? ex.emoji : '🏋️',
             sets: [{ reps: '', weight: '', notes: '', done: false }],
           };
         });
@@ -416,7 +450,7 @@
             const ex = DB.getExercise(id);
             if (!ex) return;
             activeWorkout.exercises.push({
-              exerciseId: id, exerciseName: ex.name, emoji: ex.emoji,
+              exerciseId: id, exerciseName: ex.name,
               sets: [{ reps: '', weight: '', notes: '', done: false }],
             });
           });
@@ -452,7 +486,7 @@
     activeWorkout.exercises.forEach((ex, exIdx) => {
       const exCard = el('div', { class: 'workout-ex' });
       const head = el('div', { class: 'workout-ex-head' }, [
-        el('div', { class: 'workout-ex-name' }, `${ex.emoji || '🏋️'}  ${ex.exerciseName}`),
+        el('div', { class: 'workout-ex-name' }, ex.exerciseName),
         el('button', {
           class: 'workout-ex-rm',
           onclick: () => {
@@ -598,7 +632,7 @@
     }
     w.exercises.forEach((ex) => {
       const card = el('div', { class: 'detail-ex' });
-      card.appendChild(el('div', { class: 'detail-ex-name' }, `${ex.emoji || '🏋️'}  ${ex.exerciseName}`));
+      card.appendChild(el('div', { class: 'detail-ex-name' }, ex.exerciseName));
       (ex.sets || []).forEach((s, i) => {
         card.appendChild(el('div', { class: 'detail-set' }, [
           el('span', { class: 'n' }, `Set ${i + 1}`),
@@ -653,9 +687,12 @@
       return;
     }
     filtered.forEach((ex) => {
+      const thumb = el('div', { class: 'ex-thumb' });
+      thumb.appendChild(bodyThumb(ex));
+      thumb.appendChild(equipBadge(ex.equipment));
       grid.appendChild(el('div', { class: 'ex-card glass', onclick: () => openExerciseModal(ex) }, [
-        el('div', { class: 'ex-emoji' }, ex.emoji || '🏋️'),
-        el('div', {}, [
+        thumb,
+        el('div', { class: 'ex-info' }, [
           el('div', { class: 'ex-muscle' }, ex.muscleGroup),
           el('div', { class: 'ex-name' }, ex.name),
         ]),
@@ -678,16 +715,20 @@
     function renderAbout() {
       content.innerHTML = '';
       const imgs = el('div', { class: 'ex-modal-imgs' });
-      const startImg = el('div', { class: 'ex-modal-img' });
-      if (ex.startImage) startImg.appendChild(el('img', { src: ex.startImage, alt: 'Start' }));
-      else startImg.appendChild(el('span', { class: 'ph-emoji' }, ex.emoji || '🏋️'));
-      startImg.appendChild(el('span', { class: 'ph-label' }, 'Start'));
-      const endImg = el('div', { class: 'ex-modal-img' });
-      if (ex.endImage) endImg.appendChild(el('img', { src: ex.endImage, alt: 'End' }));
-      else endImg.appendChild(el('span', { class: 'ph-emoji' }, ex.emoji || '🏋️'));
-      endImg.appendChild(el('span', { class: 'ph-label' }, 'End'));
-      imgs.appendChild(startImg);
-      imgs.appendChild(endImg);
+
+      // Two views — front + back — of the muscle map.
+      const frontCard = el('div', { class: 'ex-modal-img' });
+      if (ex.startImage) frontCard.appendChild(el('img', { src: ex.startImage, alt: 'Front' }));
+      else frontCard.appendChild(bodyThumb({ ...ex, view: 'front' }));
+      frontCard.appendChild(el('span', { class: 'ph-label' }, 'Front'));
+
+      const backCard = el('div', { class: 'ex-modal-img' });
+      if (ex.endImage) backCard.appendChild(el('img', { src: ex.endImage, alt: 'Back' }));
+      else backCard.appendChild(bodyThumb({ ...ex, view: 'back' }));
+      backCard.appendChild(el('span', { class: 'ph-label' }, 'Back'));
+
+      imgs.appendChild(frontCard);
+      imgs.appendChild(backCard);
       content.appendChild(imgs);
 
       content.appendChild(el('div', { class: 'ex-meta-grid' }, [
@@ -794,14 +835,22 @@
     saveBtn.onclick = () => {
       const name = nameInput.value.trim();
       if (!name) { toast('Name is required'); return; }
+      // Pick a sensible default region highlight based on chosen muscle.
+      const muscleToPrimary = {
+        Chest: ['chest'], Back: ['back', 'lats'], Shoulders: ['shoulders'],
+        Arms: ['biceps', 'triceps'], Legs: ['quads', 'glutes'],
+        Core: ['abs', 'obliques'], Cardio: ['quads', 'calves'], Other: [],
+      };
+      const view = muscleSel.value === 'Back' ? 'back' : 'front';
       DB.addExercise({
         name,
         muscleGroup: muscleSel.value,
-        equipment: equipInput.value.trim(),
+        equipment: equipInput.value.trim() || 'Other',
         description: descInput.value.trim(),
         instructions: instInput.value.trim(),
         keywords: [name.toLowerCase()],
-        emoji: '🏋️',
+        view,
+        primary: muscleToPrimary[muscleSel.value] || [],
       });
       closeModal();
       renderExerciseGrid();
@@ -813,12 +862,127 @@
 
   // ---------- Settings
   function renderSettings() {
-    const m = DB.getMetrics();
-    $('#m-height').value = m.height ?? '';
-    $('#m-weight').value = m.weight ?? '';
-    $('#m-goal').value = m.goal ?? '';
-    $('#m-notes').value = m.notes ?? '';
+    renderMetricsFields();
     renderDotChart();
+  }
+
+  function renderMetricsFields() {
+    const wrap = $('#metrics-fields');
+    wrap.innerHTML = '';
+    const m = DB.getMetrics();
+    const unit = DB.getSettings().unit; // 'kg' | 'lb'
+    const isImperial = unit === 'lb';
+
+    const grid = el('div', { class: 'metric-grid' });
+
+    if (isImperial) {
+      // Height as ft + in
+      const totalInches = m.heightCm != null ? cmToIn(m.heightCm) : null;
+      const ft = totalInches != null ? Math.floor(totalInches / 12) : '';
+      const inches = totalInches != null ? roundTo(totalInches - ft * 12, 0) : '';
+
+      const ftInput = el('input', { type: 'number', inputmode: 'numeric', placeholder: '5', value: ft });
+      const inInput = el('input', { type: 'number', inputmode: 'numeric', placeholder: '10', value: inches });
+      const heightWrap = el('div', { class: 'field-dual' }, [ftInput, inInput]);
+      grid.appendChild(el('label', { class: 'field' }, [
+        el('span', {}, 'Height (ft / in)'),
+        heightWrap,
+      ]));
+      ftInput.dataset.role = 'height-ft';
+      inInput.dataset.role = 'height-in';
+
+      const weightInput = el('input', {
+        type: 'number', inputmode: 'decimal', placeholder: '165',
+        value: m.weightKg != null ? roundTo(kgToLb(m.weightKg), 1) : '',
+      });
+      weightInput.dataset.role = 'weight-lb';
+      grid.appendChild(el('label', { class: 'field' }, [
+        el('span', {}, 'Weight (lb)'), weightInput,
+      ]));
+
+      const goalInput = el('input', {
+        type: 'number', inputmode: 'decimal', placeholder: '158',
+        value: m.goalKg != null ? roundTo(kgToLb(m.goalKg), 1) : '',
+      });
+      goalInput.dataset.role = 'goal-lb';
+      grid.appendChild(el('label', { class: 'field' }, [
+        el('span', {}, 'Goal (lb)'), goalInput,
+      ]));
+    } else {
+      const heightInput = el('input', {
+        type: 'number', inputmode: 'decimal', placeholder: '178',
+        value: m.heightCm ?? '',
+      });
+      heightInput.dataset.role = 'height-cm';
+      grid.appendChild(el('label', { class: 'field' }, [
+        el('span', {}, 'Height (cm)'), heightInput,
+      ]));
+
+      const weightInput = el('input', {
+        type: 'number', inputmode: 'decimal', placeholder: '75',
+        value: m.weightKg ?? '',
+      });
+      weightInput.dataset.role = 'weight-kg';
+      grid.appendChild(el('label', { class: 'field' }, [
+        el('span', {}, 'Weight (kg)'), weightInput,
+      ]));
+
+      const goalInput = el('input', {
+        type: 'number', inputmode: 'decimal', placeholder: '72',
+        value: m.goalKg ?? '',
+      });
+      goalInput.dataset.role = 'goal-kg';
+      grid.appendChild(el('label', { class: 'field' }, [
+        el('span', {}, 'Goal (kg)'), goalInput,
+      ]));
+    }
+
+    const notes = el('textarea', { rows: '2', placeholder: 'Cutting until summer…' });
+    notes.value = m.notes ?? '';
+    notes.dataset.role = 'notes';
+    grid.appendChild(el('label', { class: 'field field-wide' }, [
+      el('span', {}, 'Notes'), notes,
+    ]));
+
+    wrap.appendChild(grid);
+  }
+
+  function collectMetricsFromForm() {
+    const wrap = $('#metrics-fields');
+    const get = (role) => {
+      const node = wrap.querySelector(`[data-role="${role}"]`);
+      return node ? node.value : '';
+    };
+    const unit = DB.getSettings().unit;
+    const isImperial = unit === 'lb';
+    let heightCm = null;
+    if (isImperial) {
+      const ft = parseFloat(get('height-ft'));
+      const inches = parseFloat(get('height-in'));
+      if (!isNaN(ft) || !isNaN(inches)) {
+        const totalIn = (isNaN(ft) ? 0 : ft) * 12 + (isNaN(inches) ? 0 : inches);
+        heightCm = roundTo(inToCm(totalIn), 1);
+      }
+    } else {
+      const cm = parseFloat(get('height-cm'));
+      heightCm = isNaN(cm) ? null : cm;
+    }
+    let weightKg = null, goalKg = null;
+    if (isImperial) {
+      const wlb = parseFloat(get('weight-lb'));
+      const glb = parseFloat(get('goal-lb'));
+      weightKg = isNaN(wlb) ? null : roundTo(lbToKg(wlb), 2);
+      goalKg = isNaN(glb) ? null : roundTo(lbToKg(glb), 2);
+    } else {
+      const wkg = parseFloat(get('weight-kg'));
+      const gkg = parseFloat(get('goal-kg'));
+      weightKg = isNaN(wkg) ? null : wkg;
+      goalKg = isNaN(gkg) ? null : gkg;
+    }
+    return {
+      heightCm, weightKg, goalKg,
+      notes: get('notes') || '',
+    };
   }
 
   function renderDotChart() {
@@ -894,12 +1058,7 @@
   });
 
   $('#save-metrics').addEventListener('click', () => {
-    DB.setMetrics({
-      height: $('#m-height').value ? Number($('#m-height').value) : null,
-      weight: $('#m-weight').value ? Number($('#m-weight').value) : null,
-      goal: $('#m-goal').value ? Number($('#m-goal').value) : null,
-      notes: $('#m-notes').value,
-    });
+    DB.setMetrics(collectMetricsFromForm());
     toast('Metrics saved');
   });
 

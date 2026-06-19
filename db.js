@@ -3,13 +3,14 @@ const DB = (() => {
   const KEY = 'lift.v1';
 
   const defaultState = () => ({
+    seedVersion: 2,
     exercises: SEED_EXERCISES.map((e) => ({ ...e })),
     programs: SEED_PROGRAMS.map((p) => ({
       ...p,
       routines: p.routines.map((r) => ({ ...r, exercises: [...r.exercises] })),
     })),
     workouts: [],
-    metrics: { height: null, weight: null, goal: null, notes: '' },
+    metrics: { heightCm: null, weightKg: null, goalKg: null, notes: '' },
     settings: { theme: 'dark', unit: 'kg' },
   });
 
@@ -24,16 +25,40 @@ const DB = (() => {
         return state;
       }
       const parsed = JSON.parse(raw);
-      // Make sure new seed exercises appear for existing users
-      const known = new Set(parsed.exercises?.map((e) => e.id) || []);
-      const merged = [...(parsed.exercises || [])];
-      SEED_EXERCISES.forEach((e) => {
-        if (!known.has(e.id)) merged.push({ ...e });
-      });
-      parsed.exercises = merged;
-      parsed.settings = parsed.settings || { theme: 'dark', unit: 'kg' };
-      parsed.metrics = parsed.metrics || { height: null, weight: null, goal: null, notes: '' };
+
+      // Schema-version aware migration. Bump SEED_VERSION when seed changes
+      // significantly so existing users pick up the new exercise library.
+      const SEED_VERSION = 2;
+      if ((parsed.seedVersion || 1) < SEED_VERSION) {
+        // Reset seed-managed data, but keep user data (workouts, metrics, settings, custom exercises)
+        const customExercises = (parsed.exercises || []).filter((e) => !e.id || !SEED_EXERCISES.some((s) => s.id === e.id))
+          .filter((e) => e && e.id && !e.seed);
+        parsed.exercises = [...SEED_EXERCISES.map((e) => ({ ...e })), ...customExercises];
+        parsed.seedVersion = SEED_VERSION;
+      } else {
+        // Fill in any newly-seeded ids
+        const known = new Set(parsed.exercises?.map((e) => e.id) || []);
+        const merged = [...(parsed.exercises || [])];
+        SEED_EXERCISES.forEach((e) => {
+          if (!known.has(e.id)) merged.push({ ...e });
+        });
+        parsed.exercises = merged;
+      }
+
+      parsed.settings = Object.assign({ theme: 'dark', unit: 'kg' }, parsed.settings || {});
+
+      // Migrate body metrics to canonical metric storage (heightCm/weightKg/goalKg).
+      // Previously stored as height/weight/goal which were already cm/kg.
+      const oldM = parsed.metrics || {};
+      parsed.metrics = {
+        heightCm: oldM.heightCm ?? oldM.height ?? null,
+        weightKg: oldM.weightKg ?? oldM.weight ?? null,
+        goalKg: oldM.goalKg ?? oldM.goal ?? null,
+        notes: oldM.notes ?? '',
+      };
+
       state = parsed;
+      save();
       return state;
     } catch (e) {
       state = defaultState();
