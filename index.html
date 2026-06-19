@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0b0b10" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f5f6fa" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Lift" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Lift — Workout Tracker</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-theme="dark">
+
+  <!-- Animated gradient backdrop -->
+  <div class="backdrop" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- App shell -->
+  <main id="app" class="app">
+
+    <!-- HOME -->
+    <section class="page" data-page="home">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow" id="home-greet">Good morning</p>
+          <h1 class="page-title">Ready to train?</h1>
+        </div>
+        <button class="icon-btn" id="theme-toggle" aria-label="Toggle theme">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </header>
+
+      <div class="stats-grid">
+        <div class="glass stat">
+          <p class="stat-label">This week</p>
+          <p class="stat-value" id="stat-week">0</p>
+          <p class="stat-sub">workouts</p>
+        </div>
+        <div class="glass stat">
+          <p class="stat-label">Last session</p>
+          <p class="stat-value" id="stat-last">—</p>
+          <p class="stat-sub" id="stat-last-sub">no history yet</p>
+        </div>
+        <div class="glass stat stat-wide">
+          <p class="stat-label">Total volume</p>
+          <p class="stat-value"><span id="stat-volume">0</span> <span class="unit">kg</span></p>
+          <p class="stat-sub">lifetime</p>
+        </div>
+      </div>
+
+      <div class="quick-actions">
+        <button class="btn btn-primary btn-lg" id="start-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Start empty workout
+        </button>
+      </div>
+
+      <div class="section-head">
+        <h2>Programs</h2>
+        <button class="text-btn" id="new-program">+ New</button>
+      </div>
+      <div id="programs-list" class="programs-list"></div>
+
+      <div class="section-head">
+        <h2>Recent</h2>
+      </div>
+      <div id="recent-list" class="recent-list"></div>
+
+      <div class="bottom-spacer"></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="page hidden" data-page="history">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Your journey</p>
+          <h1 class="page-title">History</h1>
+        </div>
+      </header>
+
+      <div class="search-bar glass">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="history-search" placeholder="Search workouts or exercises" />
+      </div>
+
+      <div class="chips" id="history-filters">
+        <button class="chip active" data-range="all">All</button>
+        <button class="chip" data-range="1">Today</button>
+        <button class="chip" data-range="7">7d</button>
+        <button class="chip" data-range="30">30d</button>
+        <button class="chip" data-range="60">60d</button>
+        <button class="chip" data-range="90">90d</button>
+      </div>
+
+      <div id="history-list" class="history-list"></div>
+      <div class="bottom-spacer"></div>
+    </section>
+
+    <!-- EXERCISES -->
+    <section class="page hidden" data-page="exercises">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Movement library</p>
+          <h1 class="page-title">Exercises</h1>
+        </div>
+        <button class="icon-btn" id="new-exercise" aria-label="New exercise">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </header>
+
+      <div class="search-bar glass">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" id="exercise-search" placeholder="Search exercises" />
+      </div>
+
+      <div class="chips chips-scroll" id="muscle-filters"></div>
+
+      <div id="exercises-grid" class="exercises-grid"></div>
+      <div class="bottom-spacer"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page hidden" data-page="settings">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Personal</p>
+          <h1 class="page-title">Settings</h1>
+        </div>
+      </header>
+
+      <div class="glass card">
+        <h3 class="card-title">Appearance</h3>
+        <div class="row">
+          <div>
+            <p class="row-title">Theme</p>
+            <p class="row-sub">Light or dark mode</p>
+          </div>
+          <div class="seg" id="theme-seg">
+            <button data-theme="light">Light</button>
+            <button data-theme="dark" class="active">Dark</button>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <p class="row-title">Weight unit</p>
+            <p class="row-sub">Used across the app</p>
+          </div>
+          <div class="seg" id="unit-seg">
+            <button data-unit="kg" class="active">kg</button>
+            <button data-unit="lb">lb</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass card">
+        <h3 class="card-title">Body metrics</h3>
+        <div class="metric-grid">
+          <label class="field">
+            <span>Height (cm)</span>
+            <input type="number" id="m-height" inputmode="decimal" placeholder="178" />
+          </label>
+          <label class="field">
+            <span>Weight (kg)</span>
+            <input type="number" id="m-weight" inputmode="decimal" placeholder="75" />
+          </label>
+          <label class="field">
+            <span>Goal (kg)</span>
+            <input type="number" id="m-goal" inputmode="decimal" placeholder="72" />
+          </label>
+          <label class="field field-wide">
+            <span>Notes</span>
+            <textarea id="m-notes" rows="2" placeholder="Cutting until summer…"></textarea>
+          </label>
+        </div>
+        <button class="btn btn-primary" id="save-metrics">Save metrics</button>
+      </div>
+
+      <div class="glass card">
+        <h3 class="card-title">Activity</h3>
+        <p class="row-sub" style="margin-bottom: 14px;">Last 16 weeks of training</p>
+        <div class="dotchart" id="dotchart"></div>
+        <div class="dotchart-legend">
+          <span>Less</span>
+          <span class="dot l0"></span>
+          <span class="dot l1"></span>
+          <span class="dot l2"></span>
+          <span class="dot l3"></span>
+          <span class="dot l4"></span>
+          <span>More</span>
+        </div>
+      </div>
+
+      <div class="glass card">
+        <h3 class="card-title">Data</h3>
+        <div class="row">
+          <div>
+            <p class="row-title">Reset all data</p>
+            <p class="row-sub">Removes programs, workouts and metrics</p>
+          </div>
+          <button class="btn btn-danger" id="reset-data">Reset</button>
+        </div>
+      </div>
+
+      <p class="footer-mark">Lift · v1.0</p>
+      <div class="bottom-spacer"></div>
+    </section>
+  </main>
+
+  <!-- Floating bottom nav -->
+  <nav class="bottom-nav glass" role="navigation">
+    <button class="nav-item active" data-nav="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="nav-item" data-nav="history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+      <span>History</span>
+    </button>
+    <button class="nav-item" data-nav="exercises">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5 17.5 17.5"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></svg>
+      <span>Exercises</span>
+    </button>
+    <button class="nav-item" data-nav="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <!-- Modal container -->
+  <div id="modal-root"></div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <script src="seed.js"></script>
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
