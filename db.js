@@ -16,6 +16,48 @@ const DB = (() => {
 
   let state = null;
 
+  const SEED_VERSION = 3;
+
+  // Run all schema migrations on a parsed/cloud state. Pure function — accepts
+  // a state object, returns a fresh migrated object. Used by both load() (from
+  // localStorage) and replaceFromCloud() (from Firestore snapshots) so the
+  // exercise library catches up no matter where the state came from.
+  function migrate(input) {
+    const parsed = { ...input };
+
+    if ((parsed.seedVersion || 1) < SEED_VERSION) {
+      // Reset seed-managed data, but keep user data (workouts, metrics, settings, custom exercises)
+      const customExercises = (parsed.exercises || []).filter((e) =>
+        e && e.id && !SEED_EXERCISES.some((s) => s.id === e.id));
+      parsed.exercises = [...SEED_EXERCISES.map((e) => ({ ...e })), ...customExercises];
+      parsed.seedVersion = SEED_VERSION;
+    } else {
+      // Fill in any newly-seeded ids
+      const known = new Set((parsed.exercises || []).map((e) => e.id));
+      const merged = [...(parsed.exercises || [])];
+      SEED_EXERCISES.forEach((e) => {
+        if (!known.has(e.id)) merged.push({ ...e });
+      });
+      parsed.exercises = merged;
+    }
+
+    parsed.settings = Object.assign({ theme: 'dark', unit: 'kg' }, parsed.settings || {});
+
+    // Canonical body metrics (heightCm/weightKg/goalKg) — old key names supported.
+    const oldM = parsed.metrics || {};
+    parsed.metrics = {
+      heightCm: oldM.heightCm ?? oldM.height ?? null,
+      weightKg: oldM.weightKg ?? oldM.weight ?? null,
+      goalKg: oldM.goalKg ?? oldM.goal ?? null,
+      notes: oldM.notes ?? '',
+    };
+
+    parsed.programs = parsed.programs || [];
+    parsed.workouts = parsed.workouts || [];
+
+    return parsed;
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -24,41 +66,9 @@ const DB = (() => {
         save();
         return state;
       }
-      const parsed = JSON.parse(raw);
-
-      // Schema-version aware migration. Bump SEED_VERSION when seed changes
-      // significantly so existing users pick up the new exercise library.
-      const SEED_VERSION = 3;
-      if ((parsed.seedVersion || 1) < SEED_VERSION) {
-        // Reset seed-managed data, but keep user data (workouts, metrics, settings, custom exercises)
-        const customExercises = (parsed.exercises || []).filter((e) => !e.id || !SEED_EXERCISES.some((s) => s.id === e.id))
-          .filter((e) => e && e.id && !e.seed);
-        parsed.exercises = [...SEED_EXERCISES.map((e) => ({ ...e })), ...customExercises];
-        parsed.seedVersion = SEED_VERSION;
-      } else {
-        // Fill in any newly-seeded ids
-        const known = new Set(parsed.exercises?.map((e) => e.id) || []);
-        const merged = [...(parsed.exercises || [])];
-        SEED_EXERCISES.forEach((e) => {
-          if (!known.has(e.id)) merged.push({ ...e });
-        });
-        parsed.exercises = merged;
-      }
-
-      parsed.settings = Object.assign({ theme: 'dark', unit: 'kg' }, parsed.settings || {});
-
-      // Migrate body metrics to canonical metric storage (heightCm/weightKg/goalKg).
-      // Previously stored as height/weight/goal which were already cm/kg.
-      const oldM = parsed.metrics || {};
-      parsed.metrics = {
-        heightCm: oldM.heightCm ?? oldM.height ?? null,
-        weightKg: oldM.weightKg ?? oldM.weight ?? null,
-        goalKg: oldM.goalKg ?? oldM.goal ?? null,
-        notes: oldM.notes ?? '',
-      };
-
-      state = parsed;
-      save();
+      state = migrate(JSON.parse(raw));
+      // Persist any changes made by the migration immediately.
+      localStorage.setItem(KEY, JSON.stringify(state));
       return state;
     } catch (e) {
       state = defaultState();
@@ -87,19 +97,29 @@ const DB = (() => {
     }, 400);
   }
 
-  // Replace local state without triggering a cloud push (used when applying
-  // a snapshot received from the cloud).
+  // Replace local state with a snapshot from the cloud.
+  // The cloud copy may pre-date the current SEED_VERSION (older device pushed
+  // it up), so it goes through migrate() too — that's what gets new exercises
+  // into the picker after a sync. If the migration changed something, we push
+  // the updated state right back so other devices catch up.
   function replaceFromCloud(cloudState) {
     if (!cloudState) return;
     suppressPush = true;
     try {
-      const merged = { ...defaultState(), ...cloudState };
-      // Drop the firestore-only field
-      delete merged.updatedAt;
+      const incoming = { ...cloudState };
+      delete incoming.updatedAt;
+      const incomingVersion = incoming.seedVersion || 1;
+      const merged = migrate({ ...defaultState(), ...incoming });
       state = merged;
       localStorage.setItem(KEY, JSON.stringify(state));
     } finally {
       suppressPush = false;
+    }
+    // If the cloud was on an older seed version, push the migrated state up
+    // so the cloud doc (and other devices) get the new exercise library too.
+    if ((cloudState.seedVersion || 1) < SEED_VERSION) {
+      // Run outside suppressPush so the push actually fires.
+      schedulePush();
     }
   }
 
