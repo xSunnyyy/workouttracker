@@ -69,6 +69,45 @@ const DB = (() => {
 
   function save() {
     localStorage.setItem(KEY, JSON.stringify(state));
+    schedulePush();
+  }
+
+  // ----- Cloud sync push (debounced, optional)
+  let pushTimer = null;
+  let suppressPush = false;
+  function schedulePush() {
+    if (suppressPush) return;
+    if (!window.CloudSync || !window.CloudSync.isAuthed || !window.CloudSync.isAuthed()) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => {
+      pushTimer = null;
+      try {
+        window.CloudSync.push(state).catch((e) => console.warn('Cloud push failed:', e));
+      } catch (e) { console.warn('Cloud push threw:', e); }
+    }, 400);
+  }
+
+  // Replace local state without triggering a cloud push (used when applying
+  // a snapshot received from the cloud).
+  function replaceFromCloud(cloudState) {
+    if (!cloudState) return;
+    suppressPush = true;
+    try {
+      const merged = { ...defaultState(), ...cloudState };
+      // Drop the firestore-only field
+      delete merged.updatedAt;
+      state = merged;
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } finally {
+      suppressPush = false;
+    }
+  }
+
+  // Force a push to cloud (used after first sign-in when cloud is empty).
+  function pushNow() {
+    if (!window.CloudSync || !window.CloudSync.isAuthed()) return Promise.resolve();
+    clearTimeout(pushTimer);
+    return window.CloudSync.push(state);
   }
 
   function reset() {
@@ -243,5 +282,6 @@ const DB = (() => {
     getMetrics, setMetrics,
     getSettings, setSetting,
     totalVolume, workoutsInRange, workoutsThisWeek,
+    replaceFromCloud, pushNow,
   };
 })();
