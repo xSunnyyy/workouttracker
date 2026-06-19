@@ -53,6 +53,23 @@ After registering a Firebase project (config goes in `firebase.js`):
 Without step 3 the app shows a *Permission denied* banner — Firestore
 defaults to deny-all in production mode.
 
+## Exercise GIFs (ExerciseDB)
+
+Settings → Exercise GIFs pulls real demo GIFs from
+[ExerciseDB on RapidAPI](https://rapidapi.com/justin-WFnsXH_t6/api/exercisedb).
+
+1. Sign up on RapidAPI (free, no card).
+2. Open the ExerciseDB API page and subscribe to the **Basic** plan
+   (free tier — 500 requests/month, more than enough since we match
+   in a single request).
+3. Copy your `X-RapidAPI-Key` from the **Code Snippets** panel.
+4. Paste it into Settings → Exercise GIFs → Match exercises with GIFs.
+
+The catalog is fetched once, fuzzy-matched against the 158 built-in
+exercises by name + equipment + target muscle. Matched `gifUrl`s are
+stored on each exercise and synced to Firestore, so other devices
+inherit the matches without needing the API key.
+
 ## File map
 
 | File | Purpose |

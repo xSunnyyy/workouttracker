@@ -1,7 +1,7 @@
 // Service worker for Lift PWA — offline-first cache for the app shell only.
 // Firebase / Firestore / Google sign-in requests bypass the SW so they always
 // reach the network when online; Firestore handles its own offline cache.
-const CACHE = 'lift-v3';
+const CACHE = 'lift-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
   './seed.js',
   './illustrations.js',
   './firebase.js',
+  './exercisedb.js',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
