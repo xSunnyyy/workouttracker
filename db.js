@@ -148,10 +148,16 @@ const DB = (() => {
   function getExercises() { return getState().exercises; }
   function getExercise(id) { return getState().exercises.find((e) => e.id === id); }
   function addExercise(ex) {
-    const e = { id: uid('ex'), emoji: '🏋️', ...ex };
+    const e = { id: uid('ex'), ...ex };
     getState().exercises.unshift(e);
     save();
     return e;
+  }
+  function updateExercise(id, fields) {
+    const e = getExercise(id);
+    if (!e) return;
+    Object.assign(e, fields);
+    save();
   }
 
   // ----- Programs
@@ -303,7 +309,7 @@ const DB = (() => {
 
   return {
     load, save, reset, getState, uid,
-    getExercises, getExercise, addExercise,
+    getExercises, getExercise, addExercise, updateExercise,
     getPrograms, getProgram, addProgram, updateProgram, deleteProgram, moveProgram,
     addRoutine, updateRoutine, deleteRoutine, getRoutine,
     getWorkouts, getWorkout, saveWorkout, deleteWorkout,
