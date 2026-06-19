@@ -6,8 +6,10 @@
 
 const ExerciseDB = (() => {
 
-  const ENDPOINT = 'https://exercisedb.p.rapidapi.com/exercises?limit=2000';
-  const HOST = 'exercisedb.p.rapidapi.com';
+  // We proxy through our own /api/* endpoint on Vercel so the RapidAPI key
+  // stays server-side. The proxy edge-caches aggressively, so the underlying
+  // RapidAPI request happens at most once per week per region.
+  const ENDPOINT = '/api/exercisedb-catalog';
 
   // ----- Name normalisation
   const STOPWORDS = new Set([
@@ -92,21 +94,36 @@ const ExerciseDB = (() => {
     return 0.7 * nameScore + 0.18 * equipBonus + 0.12 * targetBonus;
   }
 
-  async function fetchCatalog(apiKey) {
-    const res = await fetch(ENDPOINT, {
-      headers: {
-        'X-RapidAPI-Key': apiKey,
-        'X-RapidAPI-Host': HOST,
-      },
-    });
+  async function fetchCatalog() {
+    let res;
+    try {
+      res = await fetch(ENDPOINT);
+    } catch (e) {
+      const err = new Error('Network error reaching /api/exercisedb-catalog');
+      err.cause = e;
+      throw err;
+    }
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      const err = new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+      // Surface the server's JSON error if it sent one (proxy returns helpful
+      // messages for "missing env var", "upstream 401", etc).
+      let detail = '';
+      try {
+        const j = await res.json();
+        detail = j.error || JSON.stringify(j);
+      } catch {
+        detail = await res.text().catch(() => '');
+      }
+      // Local dev (python -m http.server) returns 404 + HTML — translate that
+      // into something obviously diagnosable.
+      if (res.status === 404) {
+        detail = 'Proxy endpoint not found. If you\'re running locally use `vercel dev`, or deploy to Vercel first.';
+      }
+      const err = new Error(`${detail || 'HTTP ' + res.status}`);
       err.status = res.status;
       throw err;
     }
     const data = await res.json();
-    // Some plans wrap in { data: [...] }, others return array directly
+    // ExerciseDB plans return either an array or { data: [...] }
     return Array.isArray(data) ? data : (data.data || []);
   }
 
@@ -125,8 +142,8 @@ const ExerciseDB = (() => {
     return bestScore >= 0.35 ? { match: best, score: bestScore } : null;
   }
 
-  async function matchAll({ apiKey, exercises, onProgress }) {
-    const catalog = await fetchCatalog(apiKey);
+  async function matchAll({ exercises, onProgress }) {
+    const catalog = await fetchCatalog();
     const matches = [];
     let i = 0;
     for (const ex of exercises) {

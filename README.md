@@ -53,22 +53,50 @@ After registering a Firebase project (config goes in `firebase.js`):
 Without step 3 the app shows a *Permission denied* banner — Firestore
 defaults to deny-all in production mode.
 
-## Exercise GIFs (ExerciseDB)
+## Exercise GIFs (Vercel + ExerciseDB)
 
-Settings → Exercise GIFs pulls real demo GIFs from
-[ExerciseDB on RapidAPI](https://rapidapi.com/justin-WFnsXH_t6/api/exercisedb).
+The app pulls real demo GIFs through a Vercel serverless function so
+no user ever sees the API key. The proxy edge-caches the catalog for
+7 days, so the underlying RapidAPI call happens at most once a week
+per region — the free 500 req/month tier is plenty for any number of
+users.
 
-1. Sign up on RapidAPI (free, no card).
-2. Open the ExerciseDB API page and subscribe to the **Basic** plan
-   (free tier — 500 requests/month, more than enough since we match
-   in a single request).
-3. Copy your `X-RapidAPI-Key` from the **Code Snippets** panel.
-4. Paste it into Settings → Exercise GIFs → Match exercises with GIFs.
+### One-time deploy
 
-The catalog is fetched once, fuzzy-matched against the 158 built-in
-exercises by name + equipment + target muscle. Matched `gifUrl`s are
-stored on each exercise and synced to Firestore, so other devices
-inherit the matches without needing the API key.
+1. **Get a RapidAPI key.** Sign up at rapidapi.com (free, no card),
+   subscribe to the **Basic** plan of
+   [ExerciseDB](https://rapidapi.com/justin-WFnsXH_t6/api/exercisedb),
+   copy `X-RapidAPI-Key` from the Code Snippets panel.
+2. **Deploy to Vercel.** Push this repo to GitHub → import on
+   vercel.com → no framework, root directory. Vercel auto-detects
+   `api/*.js` as Edge Functions.
+3. **Set the env var.** Project Settings → Environment Variables →
+   add `RAPIDAPI_KEY = <your key>` for Production (and Preview if
+   you want previews to work). Redeploy.
+
+That's it — the GIF proxy is live at `https://yourapp.vercel.app/api/exercisedb-catalog`.
+
+### Using it
+
+Settings → Exercise GIFs → **Match exercises with GIFs**.
+The catalog is fuzzy-matched against the 158 built-in exercises by
+name + equipment + target muscle. Matched `gifUrl`s are stored on
+each exercise and synced to Firestore so other devices inherit them
+automatically.
+
+### Local dev
+
+`python3 -m http.server` doesn't run the serverless function, so the
+match button will fail. Two options:
+
+```bash
+# Option A: run Vercel locally (loads .env.local + runs api/*)
+npm i -g vercel
+echo 'RAPIDAPI_KEY=your_key_here' > .env.local
+vercel dev
+
+# Option B: just use the deployed prod URL while developing other features
+```
 
 ## File map
 

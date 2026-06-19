@@ -172,7 +172,6 @@
     catch { return {}; }
   })();
   uiState.collapsedPrograms = uiState.collapsedPrograms || [];
-  uiState.exerciseDbKey = uiState.exerciseDbKey || '';
   function saveUI() { localStorage.setItem(UI_KEY, JSON.stringify(uiState)); }
   function isCollapsed(pid) { return uiState.collapsedPrograms.includes(pid); }
   function setCollapsed(pid, collapsed) {
@@ -1010,38 +1009,22 @@
         `${matchedCount} / ${total} exercises matched`));
     } else {
       card.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 12px;' },
-        'Pull real GIF demos for every exercise via the ExerciseDB API. ' +
-        'Get a free RapidAPI key (link in the README), paste it below, then match.'));
+        'Pull real GIF demos for every exercise. Matches are stored on your account and sync across devices.'));
     }
-
-    const keyInput = el('input', {
-      type: 'password', placeholder: 'X-RapidAPI-Key',
-      value: uiState.exerciseDbKey || '',
-      autocomplete: 'off', spellcheck: 'false',
-    });
-    const keyField = el('label', { class: 'field' }, [
-      el('span', {}, 'RapidAPI key'), keyInput,
-    ]);
-    card.appendChild(keyField);
 
     const status = el('p', { class: 'row-sub', style: 'margin: 10px 0 12px; min-height: 18px;' }, '');
 
-    const matchBtn = el('button', { class: 'btn btn-primary btn-block' }, matchedCount > 0 ? 'Re-match GIFs' : 'Match exercises with GIFs');
+    const matchBtn = el('button', { class: 'btn btn-primary btn-block' },
+      matchedCount > 0 ? 'Re-match GIFs' : 'Match exercises with GIFs');
     matchBtn.onclick = async () => {
-      const key = keyInput.value.trim();
-      if (!key) { toast('Paste your RapidAPI key first'); keyInput.focus(); return; }
-      uiState.exerciseDbKey = key;
-      saveUI();
       matchBtn.disabled = true;
       status.textContent = 'Fetching catalog…';
       try {
         const exercises = DB.getExercises();
         const { matches } = await ExerciseDB.matchAll({
-          apiKey: key,
           exercises,
           onProgress: (i, n) => { status.textContent = `Matching… ${i} / ${n}`; },
         });
-        // Apply matches
         matches.forEach((m) => {
           DB.updateExercise(m.exerciseId, {
             gifUrl: m.match.gifUrl,
@@ -1053,12 +1036,12 @@
         toast(`Matched ${matches.length} of ${exercises.length} exercises`);
       } catch (e) {
         console.error('ExerciseDB match failed:', e);
-        let msg = 'Match failed';
-        if (e.status === 401 || e.status === 403) msg = 'API key rejected — double-check it';
-        else if (e.status === 429) msg = 'Rate limit hit — try again later';
-        else if (e.message) msg = `Failed: ${e.message.slice(0, 80)}`;
-        status.textContent = msg;
-        toast(msg);
+        let msg = e?.message || 'Match failed';
+        if (e?.status === 401 || e?.status === 403) msg = 'Server rejected the upstream API key. Check RAPIDAPI_KEY in Vercel env vars.';
+        else if (e?.status === 429) msg = 'Rate limit hit — try again later';
+        else if (e?.status === 500 && /RAPIDAPI_KEY/.test(msg)) msg = 'RAPIDAPI_KEY env var not set in Vercel.';
+        status.textContent = msg.slice(0, 140);
+        toast('Match failed — see card for details');
       } finally {
         matchBtn.disabled = false;
       }
