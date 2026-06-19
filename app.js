@@ -882,8 +882,9 @@
   }
 
   // ---------- Sync card (sign in with Google)
-  let cloudReady = false;
-  function renderSyncCard() {
+  let lastSyncError = null;
+  function renderSyncCard(err) {
+    if (err !== undefined) lastSyncError = err;
     const card = $('#sync-card');
     if (!card) return;
     card.innerHTML = '';
@@ -906,12 +907,41 @@
       ]);
       const signOutBtn = el('button', { class: 'btn btn-ghost btn-block' }, 'Sign out');
       signOutBtn.onclick = async () => {
-        try { await cloud.signOut(); toast('Signed out'); }
+        try { await cloud.signOut(); lastSyncError = null; toast('Signed out'); }
         catch (e) { toast('Sign out failed'); }
       };
       card.appendChild(el('h3', { class: 'card-title' }, 'Cloud sync'));
       card.appendChild(head);
-      card.appendChild(el('p', { class: 'row-sub auth-status' }, 'Synced — changes appear across all your devices.'));
+      if (lastSyncError) {
+        const code = lastSyncError.code || '';
+        const isRules = code === 'permission-denied';
+        card.appendChild(el('div', { class: 'auth-error' }, [
+          el('div', { class: 'auth-error-title' },
+            isRules ? 'Firestore security rules not published' : 'Sync failed'),
+          el('div', { class: 'auth-error-body' },
+            isRules
+              ? 'Open Firebase Console → Firestore → Rules and publish the rules from the README. Then tap Retry.'
+              : `${code || 'error'}: ${(lastSyncError.message || '').slice(0, 140)}`),
+        ]));
+        const retry = el('button', { class: 'btn btn-secondary btn-block' }, 'Retry sync');
+        retry.onclick = async () => {
+          retry.disabled = true;
+          try {
+            const cs = await cloud.pull();
+            if (cs) { DB.replaceFromCloud(cs); rerenderCurrentPage(); }
+            else { await DB.pushNow(); }
+            lastSyncError = null;
+            renderSyncCard();
+            toast('Synced');
+          } catch (e) {
+            renderSyncCard(e);
+            toast('Still failing — check console');
+          } finally { retry.disabled = false; }
+        };
+        card.appendChild(retry);
+      } else {
+        card.appendChild(el('p', { class: 'row-sub auth-status' }, 'Synced — changes appear across all your devices.'));
+      }
       card.appendChild(signOutBtn);
     } else {
       card.appendChild(el('h3', { class: 'card-title' }, 'Sync across devices'));
@@ -954,9 +984,23 @@
           await DB.pushNow();
           toast(`Signed in — synced ${DB.getWorkouts().length} workout${DB.getWorkouts().length === 1 ? '' : 's'} to cloud`);
         }
+        lastSyncError = null;
+        renderSyncCard();
       } catch (e) {
-        console.warn('Initial sync failed:', e);
-        toast('Sync error — see console');
+        console.error('Initial sync failed:', e);
+        const code = e?.code || '';
+        let msg = 'Sync error';
+        if (code === 'permission-denied') {
+          msg = 'Permission denied — publish Firestore security rules';
+        } else if (code === 'unavailable') {
+          msg = 'Cloud offline — will sync when connection returns';
+        } else if (code === 'failed-precondition') {
+          msg = 'Sync needs a single browser tab open';
+        } else if (e?.message) {
+          msg = `Sync error: ${e.message.slice(0, 80)}`;
+        }
+        toast(msg);
+        renderSyncCard(e);
       }
     });
     cloud.onCloudUpdate((cloudState) => {
