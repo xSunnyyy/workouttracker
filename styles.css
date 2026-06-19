@@ -278,21 +278,59 @@ a { color: inherit; text-decoration: none; }
 .program-card {
   padding: 18px;
   border-radius: var(--radius-md);
-  cursor: pointer;
   transition: transform 0.2s var(--ease);
 }
-.program-card:active { transform: scale(0.985); }
 .program-head {
   display: flex; justify-content: space-between; align-items: flex-start;
-  margin-bottom: 4px;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.program-head-info { min-width: 0; flex: 1; }
+.program-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 .program-name {
   font-family: var(--font-display);
   font-size: 17px;
   font-weight: 700;
 }
-.program-meta { font-size: 12px; color: var(--text-mute); }
-.program-notes { font-size: 13px; color: var(--text-dim); margin-top: 6px; }
+.program-meta { font-size: 12px; color: var(--text-mute); margin-top: 2px; }
+.program-notes { font-size: 13px; color: var(--text-dim); margin-top: 10px; }
+
+/* Small icon buttons used in the program header */
+.mini-btn {
+  width: 32px; height: 32px;
+  border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-dim);
+  transition: background 0.15s, color 0.15s, transform 0.2s var(--ease);
+}
+.mini-btn:hover { background: var(--glass); color: var(--text); }
+.mini-btn:active { transform: scale(0.9); }
+.mini-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.mini-btn:disabled:hover { background: transparent; color: var(--text-dim); }
+.mini-btn svg { width: 16px; height: 16px; }
+.mini-btn.chevron svg { transition: transform 0.3s var(--ease); }
+.program-card.is-collapsed .mini-btn.chevron svg { transform: rotate(-90deg); }
+
+/* Collapsible body */
+.program-body {
+  margin-top: 4px;
+  overflow: hidden;
+  transition: max-height 0.3s var(--ease), opacity 0.25s var(--ease), margin-top 0.25s var(--ease);
+  max-height: 2000px;
+  opacity: 1;
+}
+.program-card.is-collapsed .program-body {
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+}
 
 .routines-mini {
   margin-top: 12px;

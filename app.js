@@ -156,6 +156,30 @@
     renderRecent();
   }
 
+  // UI state for collapsed program cards — local-only, not synced.
+  const UI_KEY = 'lift.ui.v1';
+  const uiState = (() => {
+    try { return JSON.parse(localStorage.getItem(UI_KEY) || '{}'); }
+    catch { return {}; }
+  })();
+  uiState.collapsedPrograms = uiState.collapsedPrograms || [];
+  function saveUI() { localStorage.setItem(UI_KEY, JSON.stringify(uiState)); }
+  function isCollapsed(pid) { return uiState.collapsedPrograms.includes(pid); }
+  function setCollapsed(pid, collapsed) {
+    const arr = uiState.collapsedPrograms;
+    const i = arr.indexOf(pid);
+    if (collapsed && i === -1) arr.push(pid);
+    if (!collapsed && i !== -1) arr.splice(i, 1);
+    saveUI();
+  }
+
+  const ICONS = {
+    chevDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+    arrowUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"/></svg>',
+    arrowDown: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 10 12 16 18 10"/></svg>',
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  };
+
   function renderPrograms() {
     const list = $('#programs-list');
     list.innerHTML = '';
@@ -167,20 +191,58 @@
       ]));
       return;
     }
-    programs.forEach((p) => {
-      const card = el('div', { class: 'program-card glass' });
+    programs.forEach((p, idx) => {
+      const collapsed = isCollapsed(p.id);
+      const card = el('div', { class: 'program-card glass' + (collapsed ? ' is-collapsed' : '') });
+
+      const upBtn = el('button', {
+        class: 'mini-btn',
+        'aria-label': 'Move up',
+        title: 'Move up',
+        html: ICONS.arrowUp,
+        onclick: (e) => { e.stopPropagation(); DB.moveProgram(p.id, -1); renderPrograms(); },
+      });
+      if (idx === 0) upBtn.disabled = true;
+
+      const downBtn = el('button', {
+        class: 'mini-btn',
+        'aria-label': 'Move down',
+        title: 'Move down',
+        html: ICONS.arrowDown,
+        onclick: (e) => { e.stopPropagation(); DB.moveProgram(p.id, 1); renderPrograms(); },
+      });
+      if (idx === programs.length - 1) downBtn.disabled = true;
+
+      const editBtn = el('button', {
+        class: 'text-btn',
+        onclick: (e) => { e.stopPropagation(); openProgramEditor(p); },
+      }, 'Edit');
+
+      const chevBtn = el('button', {
+        class: 'mini-btn chevron',
+        'aria-label': collapsed ? 'Expand' : 'Collapse',
+        title: collapsed ? 'Expand' : 'Collapse',
+        html: ICONS.chevDown,
+        onclick: (e) => { e.stopPropagation(); setCollapsed(p.id, !collapsed); renderPrograms(); },
+      });
+
       const head = el('div', { class: 'program-head' }, [
-        el('div', {}, [
+        el('div', { class: 'program-head-info' }, [
           el('div', { class: 'program-name' }, p.name),
           el('div', { class: 'program-meta' }, `${p.routines.length} routine${p.routines.length !== 1 ? 's' : ''}`),
         ]),
-        el('button', {
-          class: 'text-btn',
-          onclick: (e) => { e.stopPropagation(); openProgramEditor(p); },
-        }, 'Edit'),
+        el('div', { class: 'program-head-actions' }, [upBtn, downBtn, editBtn, chevBtn]),
       ]);
+      // Tap anywhere on the header (except action buttons, which stopPropagation) to toggle.
+      head.addEventListener('click', () => {
+        setCollapsed(p.id, !collapsed);
+        renderPrograms();
+      });
+
       card.appendChild(head);
-      if (p.notes) card.appendChild(el('p', { class: 'program-notes' }, p.notes));
+
+      const body = el('div', { class: 'program-body' });
+      if (p.notes) body.appendChild(el('p', { class: 'program-notes' }, p.notes));
 
       const routinesWrap = el('div', { class: 'routines-mini' });
       p.routines.forEach((r) => {
@@ -198,7 +260,7 @@
               class: 'play',
               'aria-label': 'Start routine',
               onclick: (e) => { e.stopPropagation(); startWorkout({ programId: p.id, routineId: r.id }); },
-              html: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+              html: ICONS.play,
             }),
           ]),
         ]);
@@ -209,7 +271,8 @@
         onclick: () => openRoutineEditor(p),
       }, '+ Add routine');
       routinesWrap.appendChild(addBtn);
-      card.appendChild(routinesWrap);
+      body.appendChild(routinesWrap);
+      card.appendChild(body);
       list.appendChild(card);
     });
   }
