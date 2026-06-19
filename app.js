@@ -165,7 +165,7 @@
     renderRecent();
   }
 
-  // UI state — local-only, not synced. Holds preferences and the RapidAPI key.
+  // UI state for collapsed program cards — local-only, not synced.
   const UI_KEY = 'lift.ui.v1';
   const uiState = (() => {
     try { return JSON.parse(localStorage.getItem(UI_KEY) || '{}'); }
@@ -830,32 +830,22 @@
 
     function renderAbout() {
       content.innerHTML = '';
+      const imgs = el('div', { class: 'ex-modal-imgs' });
 
-      if (ex.gifUrl) {
-        // GIF demonstration. Pair it with a compact muscle-map thumb beside.
-        const gifWrap = el('div', { class: 'ex-modal-gif-wrap' });
-        const gifBox = el('div', { class: 'ex-modal-gif' }, [
-          el('img', { src: ex.gifUrl, alt: ex.name, loading: 'lazy' }),
-        ]);
-        const muscleBox = el('div', { class: 'ex-modal-muscle' });
-        muscleBox.appendChild(bodyThumb(ex));
-        muscleBox.appendChild(el('span', { class: 'ph-label' }, 'Muscles'));
-        gifWrap.appendChild(gifBox);
-        gifWrap.appendChild(muscleBox);
-        content.appendChild(gifWrap);
-      } else {
-        // Fall back to two SVG views — front + back — of the muscle map.
-        const imgs = el('div', { class: 'ex-modal-imgs' });
-        const frontCard = el('div', { class: 'ex-modal-img' });
-        frontCard.appendChild(bodyThumb({ ...ex, view: 'front' }));
-        frontCard.appendChild(el('span', { class: 'ph-label' }, 'Front'));
-        const backCard = el('div', { class: 'ex-modal-img' });
-        backCard.appendChild(bodyThumb({ ...ex, view: 'back' }));
-        backCard.appendChild(el('span', { class: 'ph-label' }, 'Back'));
-        imgs.appendChild(frontCard);
-        imgs.appendChild(backCard);
-        content.appendChild(imgs);
-      }
+      // Two views — front + back — of the muscle map.
+      const frontCard = el('div', { class: 'ex-modal-img' });
+      if (ex.startImage) frontCard.appendChild(el('img', { src: ex.startImage, alt: 'Front' }));
+      else frontCard.appendChild(bodyThumb({ ...ex, view: 'front' }));
+      frontCard.appendChild(el('span', { class: 'ph-label' }, 'Front'));
+
+      const backCard = el('div', { class: 'ex-modal-img' });
+      if (ex.endImage) backCard.appendChild(el('img', { src: ex.endImage, alt: 'Back' }));
+      else backCard.appendChild(bodyThumb({ ...ex, view: 'back' }));
+      backCard.appendChild(el('span', { class: 'ph-label' }, 'Back'));
+
+      imgs.appendChild(frontCard);
+      imgs.appendChild(backCard);
+      content.appendChild(imgs);
 
       content.appendChild(el('div', { class: 'ex-meta-grid' }, [
         el('div', { class: 'ex-meta' }, [
@@ -989,66 +979,8 @@
   // ---------- Settings
   function renderSettings() {
     renderSyncCard();
-    renderGifsCard();
     renderMetricsFields();
     renderDotChart();
-  }
-
-  // ---------- ExerciseDB GIF card
-  function renderGifsCard() {
-    const card = $('#gifs-card');
-    if (!card) return;
-    card.innerHTML = '';
-    card.appendChild(el('h3', { class: 'card-title' }, 'Exercise GIFs'));
-
-    const matchedCount = DB.getExercises().filter((e) => e.gifUrl).length;
-    const total = DB.getExercises().length;
-
-    if (matchedCount > 0) {
-      card.appendChild(el('p', { class: 'row-sub auth-status', style: 'margin-bottom: 12px;' },
-        `${matchedCount} / ${total} exercises matched`));
-    } else {
-      card.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 12px;' },
-        'Pull real GIF demos for every exercise. Matches are stored on your account and sync across devices.'));
-    }
-
-    const status = el('p', { class: 'row-sub', style: 'margin: 10px 0 12px; min-height: 18px;' }, '');
-
-    const matchBtn = el('button', { class: 'btn btn-primary btn-block' },
-      matchedCount > 0 ? 'Re-match GIFs' : 'Match exercises with GIFs');
-    matchBtn.onclick = async () => {
-      matchBtn.disabled = true;
-      status.textContent = 'Fetching catalog…';
-      try {
-        const exercises = DB.getExercises();
-        const { matches } = await ExerciseDB.matchAll({
-          exercises,
-          onProgress: (i, n) => { status.textContent = `Matching… ${i} / ${n}`; },
-        });
-        matches.forEach((m) => {
-          DB.updateExercise(m.exerciseId, {
-            gifUrl: m.match.gifUrl,
-            exerciseDbId: m.match.id,
-            exerciseDbName: m.match.name,
-          });
-        });
-        renderGifsCard();
-        toast(`Matched ${matches.length} of ${exercises.length} exercises`);
-      } catch (e) {
-        console.error('ExerciseDB match failed:', e);
-        let msg = e?.message || 'Match failed';
-        if (e?.status === 401 || e?.status === 403) msg = 'Server rejected the upstream API key. Check RAPIDAPI_KEY in Vercel env vars.';
-        else if (e?.status === 429) msg = 'Rate limit hit — try again later';
-        else if (e?.status === 500 && /RAPIDAPI_KEY/.test(msg)) msg = 'RAPIDAPI_KEY env var not set in Vercel.';
-        status.textContent = msg.slice(0, 140);
-        toast('Match failed — see card for details');
-      } finally {
-        matchBtn.disabled = false;
-      }
-    };
-
-    card.appendChild(matchBtn);
-    card.appendChild(status);
   }
 
   // ---------- Sync card (sign in with Google)
