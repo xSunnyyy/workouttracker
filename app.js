@@ -876,8 +876,100 @@
 
   // ---------- Settings
   function renderSettings() {
+    renderSyncCard();
     renderMetricsFields();
     renderDotChart();
+  }
+
+  // ---------- Sync card (sign in with Google)
+  let cloudReady = false;
+  function renderSyncCard() {
+    const card = $('#sync-card');
+    if (!card) return;
+    card.innerHTML = '';
+    const cloud = window.CloudSync;
+    if (!cloud) {
+      card.appendChild(el('h3', { class: 'card-title' }, 'Sync'));
+      card.appendChild(el('p', { class: 'row-sub' }, 'Cloud sync is loading…'));
+      return;
+    }
+    const user = cloud.user();
+    if (user) {
+      const avatar = el('img', { class: 'auth-avatar', src: user.photoURL || '', alt: '' });
+      avatar.onerror = () => { avatar.style.display = 'none'; };
+      const head = el('div', { class: 'auth-row' }, [
+        avatar,
+        el('div', { class: 'auth-meta' }, [
+          el('div', { class: 'auth-name' }, user.displayName || 'Signed in'),
+          el('div', { class: 'auth-email row-sub' }, user.email || ''),
+        ]),
+      ]);
+      const signOutBtn = el('button', { class: 'btn btn-ghost btn-block' }, 'Sign out');
+      signOutBtn.onclick = async () => {
+        try { await cloud.signOut(); toast('Signed out'); }
+        catch (e) { toast('Sign out failed'); }
+      };
+      card.appendChild(el('h3', { class: 'card-title' }, 'Cloud sync'));
+      card.appendChild(head);
+      card.appendChild(el('p', { class: 'row-sub auth-status' }, 'Synced — changes appear across all your devices.'));
+      card.appendChild(signOutBtn);
+    } else {
+      card.appendChild(el('h3', { class: 'card-title' }, 'Sync across devices'));
+      card.appendChild(el('p', { class: 'row-sub' }, 'Sign in to keep your workouts in sync between your phone and desktop. Works offline too.'));
+      const btn = el('button', { class: 'btn btn-google btn-block' });
+      btn.innerHTML = '<span class="g-logo" aria-hidden="true">' +
+        '<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.17-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.71v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.61z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86a5.27 5.27 0 0 1-4.95-3.64H1.04v2.34A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M4.05 10.78a5.4 5.4 0 0 1 0-3.45V4.99H1.04a9 9 0 0 0 0 8.13l3-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.34l2.58-2.58A9 9 0 0 0 9 0 9 9 0 0 0 1.04 4.99l3 2.34A5.27 5.27 0 0 1 9 3.58z"/></svg>' +
+        '</span> Continue with Google';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try { await cloud.signIn(); }
+        catch (e) { console.error(e); toast(e?.code === 'auth/unauthorized-domain' ? 'Domain not authorized in Firebase' : 'Sign in failed'); }
+        finally { btn.disabled = false; }
+      };
+      card.appendChild(btn);
+    }
+  }
+
+  // Refresh the sync card whenever auth state changes (works on any page —
+  // the element may not be in the DOM, renderSyncCard handles that).
+  function setupCloudSync() {
+    const cloud = window.CloudSync;
+    if (!cloud) {
+      // firebase.js loads async (it's a module). Retry until it's there.
+      setTimeout(setupCloudSync, 100);
+      return;
+    }
+    cloud.onAuth(async (user) => {
+      renderSyncCard();
+      if (!user) return;
+      // First sign-in handling: pull cloud state. If empty, push our local
+      // state up so nothing's lost. If non-empty, replace local and re-render.
+      try {
+        const cloudState = await cloud.pull();
+        if (cloudState) {
+          DB.replaceFromCloud(cloudState);
+          rerenderCurrentPage();
+          toast(`Signed in as ${user.displayName || user.email}`);
+        } else {
+          await DB.pushNow();
+          toast(`Signed in — synced ${DB.getWorkouts().length} workout${DB.getWorkouts().length === 1 ? '' : 's'} to cloud`);
+        }
+      } catch (e) {
+        console.warn('Initial sync failed:', e);
+        toast('Sync error — see console');
+      }
+    });
+    cloud.onCloudUpdate((cloudState) => {
+      DB.replaceFromCloud(cloudState);
+      rerenderCurrentPage();
+    });
+  }
+
+  function rerenderCurrentPage() {
+    if (currentPage === 'home') renderHome();
+    else if (currentPage === 'history') renderHistory();
+    else if (currentPage === 'exercises') renderExercises();
+    else if (currentPage === 'settings') renderSettings();
   }
 
   function renderMetricsFields() {
@@ -1090,4 +1182,5 @@
   applyTheme(settings.theme || 'dark');
   applyUnit(settings.unit || 'kg');
   renderHome();
+  setupCloudSync();
 })();
