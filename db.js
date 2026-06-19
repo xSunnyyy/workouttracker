@@ -3,7 +3,7 @@ const DB = (() => {
   const KEY = 'lift.v1';
 
   const defaultState = () => ({
-    seedVersion: 2,
+    seedVersion: 3,
     exercises: SEED_EXERCISES.map((e) => ({ ...e })),
     programs: SEED_PROGRAMS.map((p) => ({
       ...p,
@@ -28,7 +28,7 @@ const DB = (() => {
 
       // Schema-version aware migration. Bump SEED_VERSION when seed changes
       // significantly so existing users pick up the new exercise library.
-      const SEED_VERSION = 2;
+      const SEED_VERSION = 3;
       if ((parsed.seedVersion || 1) < SEED_VERSION) {
         // Reset seed-managed data, but keep user data (workouts, metrics, settings, custom exercises)
         const customExercises = (parsed.exercises || []).filter((e) => !e.id || !SEED_EXERCISES.some((s) => s.id === e.id))
@@ -154,6 +154,15 @@ const DB = (() => {
     s.programs = s.programs.filter((p) => p.id !== id);
     save();
   }
+  function moveProgram(id, direction) {
+    const programs = getState().programs;
+    const i = programs.findIndex((p) => p.id === id);
+    if (i === -1) return;
+    const target = i + direction;
+    if (target < 0 || target >= programs.length) return;
+    [programs[i], programs[target]] = [programs[target], programs[i]];
+    save();
+  }
 
   // ----- Routines
   function addRoutine(programId, { name, notes, exercises }) {
@@ -275,7 +284,7 @@ const DB = (() => {
   return {
     load, save, reset, getState, uid,
     getExercises, getExercise, addExercise,
-    getPrograms, getProgram, addProgram, updateProgram, deleteProgram,
+    getPrograms, getProgram, addProgram, updateProgram, deleteProgram, moveProgram,
     addRoutine, updateRoutine, deleteRoutine, getRoutine,
     getWorkouts, getWorkout, saveWorkout, deleteWorkout,
     getExerciseHistory,
