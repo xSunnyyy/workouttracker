@@ -269,13 +269,17 @@
     setTimeout(() => nameInput.focus(), 100);
   }
 
-  function openRoutineEditor(program, routine = null) {
+  function openRoutineEditor(program, routine = null, draft = null) {
     const isNew = !routine;
-    const nameInput = el('input', { type: 'text', value: routine?.name || '', placeholder: 'e.g. Push Day' });
-    const notesInput = el('textarea', { rows: '2', placeholder: 'Notes (optional)' });
-    notesInput.value = routine?.notes || '';
+    const initName = draft?.name ?? routine?.name ?? '';
+    const initNotes = draft?.notes ?? routine?.notes ?? '';
+    const initExercises = draft?.exercises ?? routine?.exercises ?? [];
 
-    let selectedIds = routine ? [...routine.exercises] : [];
+    const nameInput = el('input', { type: 'text', value: initName, placeholder: 'e.g. Push Day' });
+    const notesInput = el('textarea', { rows: '2', placeholder: 'Notes (optional)' });
+    notesInput.value = initNotes;
+
+    let selectedIds = [...initExercises];
 
     const selectedWrap = el('div', { class: 'picker-list', style: 'margin-bottom: 12px;' });
     const renderSelected = () => {
@@ -306,9 +310,19 @@
 
     const addExBtn = el('button', { class: 'add-exercise-btn' }, '+ Add exercises');
     addExBtn.onclick = () => {
+      // Capture in-progress edits so we can restore them after the picker closes.
+      const snapshot = {
+        name: nameInput.value,
+        notes: notesInput.value,
+        exercises: selectedIds,
+      };
       openExercisePicker({
         initial: selectedIds,
-        onConfirm: (ids) => { selectedIds = ids; renderSelected(); openRoutineEditor(program, { ...(routine||{}), name: nameInput.value, notes: notesInput.value, exercises: selectedIds }); },
+        onConfirm: (ids) => {
+          snapshot.exercises = ids;
+          // Reopen the same editor (new vs. edit preserved via the original `routine` arg)
+          openRoutineEditor(program, routine, snapshot);
+        },
       });
     };
 
