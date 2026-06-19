@@ -816,6 +816,56 @@
     });
   }
 
+  // Manual GIF picker: search the ExerciseDB catalog and pick a GIF for an exercise.
+  function openGifPicker(exercise, onPicked) {
+    const search = el('input', { type: 'text', value: exercise.name || '', placeholder: 'Search ExerciseDB…' });
+    const searchIcon = el('span');
+    searchIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+    const bar = el('div', { class: 'search-bar glass', style: 'margin-bottom: 14px;' }, [
+      searchIcon.firstChild, search,
+    ]);
+    const status = el('p', { class: 'row-sub', style: 'text-align:center; padding:18px;' }, 'Loading catalog…');
+    const list = el('div', { class: 'gif-picker-list' });
+
+    function renderResults() {
+      list.innerHTML = '';
+      const results = ExerciseDB.searchCatalog(search.value);
+      if (!results.length) {
+        list.appendChild(el('p', { class: 'row-sub', style: 'text-align:center; padding:18px;' },
+          'No matches — try a different search.'));
+        return;
+      }
+      results.forEach((r) => {
+        const item = el('div', { class: 'gif-picker-item' });
+        item.appendChild(el('img', { src: r.gifUrl, class: 'gif-picker-img', loading: 'lazy', alt: r.name }));
+        item.appendChild(el('div', { class: 'gif-picker-info' }, [
+          el('div', { class: 'gif-picker-name' }, r.name),
+          el('div', { class: 'gif-picker-meta' }, `${r.target || '?'} · ${r.equipment || '?'}`),
+        ]));
+        item.onclick = () => { closeModal(); onPicked(r); };
+        list.appendChild(item);
+      });
+    }
+
+    ExerciseDB.getCatalog()
+      .then(() => { if (status.parentNode) status.remove(); renderResults(); })
+      .catch((e) => {
+        status.textContent = (e?.message || 'Failed to load catalog').slice(0, 200);
+      });
+
+    search.addEventListener('input', () => {
+      if (status.parentNode) return; // still loading
+      renderResults();
+    });
+
+    openModal({
+      title: 'Pick a GIF',
+      body: el('div', {}, [bar, status, list]),
+      fullHeight: true,
+    });
+    setTimeout(() => { search.focus(); search.select(); }, 80);
+  }
+
   function openExerciseModal(ex) {
     let activeTab = 'about';
     const body = el('div');
@@ -856,6 +906,22 @@
         imgs.appendChild(backCard);
         content.appendChild(imgs);
       }
+
+      // Pick / change GIF button — opens the catalog search.
+      const pickBtn = el('button', { class: 'btn btn-ghost btn-block', style: 'margin-bottom: 14px;' },
+        ex.gifUrl ? 'Change GIF' : 'Pick a GIF from library');
+      pickBtn.onclick = () => openGifPicker(ex, (picked) => {
+        DB.updateExercise(ex.id, {
+          gifUrl: picked.gifUrl,
+          exerciseDbId: picked.id,
+          exerciseDbName: picked.name,
+        });
+        // refresh local ref + re-render about
+        Object.assign(ex, { gifUrl: picked.gifUrl, exerciseDbId: picked.id, exerciseDbName: picked.name });
+        renderAbout();
+        toast('GIF saved');
+      });
+      content.appendChild(pickBtn);
 
       content.appendChild(el('div', { class: 'ex-meta-grid' }, [
         el('div', { class: 'ex-meta' }, [
@@ -995,6 +1061,7 @@
   }
 
   // ---------- ExerciseDB GIF card
+  let lastMatchResult = null;
   function renderGifsCard() {
     const card = $('#gifs-card');
     if (!card) return;
@@ -1021,26 +1088,31 @@
       status.textContent = 'Fetching catalog…';
       try {
         const exercises = DB.getExercises();
-        const { matches } = await ExerciseDB.matchAll({
+        const result = await ExerciseDB.matchAll({
           exercises,
           onProgress: (i, n) => { status.textContent = `Matching… ${i} / ${n}`; },
         });
-        matches.forEach((m) => {
+        result.matches.forEach((m) => {
           DB.updateExercise(m.exerciseId, {
             gifUrl: m.match.gifUrl,
             exerciseDbId: m.match.id,
             exerciseDbName: m.match.name,
           });
         });
+        lastMatchResult = result;
         renderGifsCard();
-        toast(`Matched ${matches.length} of ${exercises.length} exercises`);
+        if (result.matches.length === 0) {
+          toast(`Catalog: ${result.catalogSize} exercises, but 0 matched. Use Pick GIF in each exercise.`);
+        } else {
+          toast(`Matched ${result.matches.length} of ${exercises.length} exercises`);
+        }
       } catch (e) {
         console.error('ExerciseDB match failed:', e);
         let msg = e?.message || 'Match failed';
         if (e?.status === 401 || e?.status === 403) msg = 'Server rejected the upstream API key. Check RAPIDAPI_KEY in Vercel env vars.';
         else if (e?.status === 429) msg = 'Rate limit hit — try again later';
         else if (e?.status === 500 && /RAPIDAPI_KEY/.test(msg)) msg = 'RAPIDAPI_KEY env var not set in Vercel.';
-        status.textContent = msg.slice(0, 140);
+        status.textContent = msg.slice(0, 200);
         toast('Match failed — see card for details');
       } finally {
         matchBtn.disabled = false;
@@ -1049,6 +1121,39 @@
 
     card.appendChild(matchBtn);
     card.appendChild(status);
+
+    // Diagnostics: show catalog size + perfect/fuzzy counts + unmatched list
+    if (lastMatchResult) {
+      const r = lastMatchResult;
+      const diag = el('div', { class: 'match-diag' }, [
+        el('div', { class: 'match-diag-row' }, [
+          el('span', {}, `Catalog: ${r.catalogSize}`),
+          el('span', {}, `Perfect: ${r.perfectCount}`),
+          el('span', {}, `Fuzzy: ${r.fuzzyCount}`),
+          el('span', {}, `Unmatched: ${r.unmatched.length}`),
+        ]),
+      ]);
+      if (r.unmatched.length) {
+        diag.appendChild(el('p', { class: 'row-sub', style: 'margin-top: 8px;' },
+          'Unmatched: ' + r.unmatched.slice(0, 8).map((e) => e.name).join(', ') +
+          (r.unmatched.length > 8 ? `, +${r.unmatched.length - 8} more` : '')));
+      }
+      card.appendChild(diag);
+    }
+
+    if (matchedCount > 0) {
+      const clearBtn = el('button', { class: 'btn btn-ghost btn-block', style: 'margin-top: 10px;' }, 'Clear all GIF matches');
+      clearBtn.onclick = () => {
+        if (!confirm('Remove gifUrl from all exercises? You can re-match anytime.')) return;
+        DB.getExercises().forEach((e) => {
+          if (e.gifUrl) DB.updateExercise(e.id, { gifUrl: null, exerciseDbId: null, exerciseDbName: null });
+        });
+        lastMatchResult = null;
+        renderGifsCard();
+        toast('GIF matches cleared');
+      };
+      card.appendChild(clearBtn);
+    }
   }
 
   // ---------- Sync card (sign in with Google)

@@ -5,8 +5,8 @@
 
 export const config = { runtime: 'edge' };
 
-const UPSTREAM = 'https://exercisedb.p.rapidapi.com/exercises?limit=2000';
 const HOST = 'exercisedb.p.rapidapi.com';
+const UPSTREAM = `https://${HOST}/exercises?limit=2000`;
 
 export default async function handler(req) {
   const apiKey = process.env.RAPIDAPI_KEY;
@@ -33,21 +33,60 @@ export default async function handler(req) {
       );
     }
 
-    // Pass the JSON through. Aggressively cache at the edge: 7 days fresh,
-    // 30 days stale-while-revalidate. Exercise libraries don't change often,
-    // so this keeps RapidAPI requests at <1 per week per region.
-    const body = await upstream.text();
-    return new Response(body, {
+    // Parse, normalise to a plain array, and only forward exercises with a
+    // gifUrl. Clients don't have to deal with paginated/wrapped shapes or
+    // entries that wouldn't be usable as a GIF source.
+    const rawText = await upstream.text();
+    let data;
+    try { data = JSON.parse(rawText); }
+    catch {
+      return json({ error: 'Upstream returned non-JSON', sample: rawText.slice(0, 200) }, 502);
+    }
+
+    const arr = extractArray(data);
+    const cleaned = arr
+      .map((ex) => normalise(ex))
+      .filter((ex) => ex && ex.name && ex.gifUrl);
+
+    // Edge-cache aggressively: 7 days fresh, 30 days SWR. Underlying RapidAPI
+    // request fires at most once per week per region regardless of traffic.
+    return new Response(JSON.stringify(cleaned), {
       status: 200,
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'public, s-maxage=604800, stale-while-revalidate=2592000',
         'Access-Control-Allow-Origin': '*',
+        'X-Catalog-Size': String(cleaned.length),
       },
     });
   } catch (err) {
     return json({ error: err?.message || String(err) }, 502);
   }
+}
+
+function extractArray(data) {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    for (const key of ['data', 'exercises', 'results', 'items', 'rows']) {
+      if (Array.isArray(data[key])) return data[key];
+    }
+    if (data.id && data.gifUrl) return [data];
+  }
+  return [];
+}
+
+function normalise(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    id: raw.id || raw.exerciseId || raw._id || '',
+    name: raw.name || raw.exerciseName || '',
+    gifUrl: raw.gifUrl || raw.gif_url || raw.gif || raw.imageUrl || '',
+    target: raw.target || raw.targetMuscle || raw.primary_muscle || '',
+    bodyPart: raw.bodyPart || raw.body_part || '',
+    equipment: raw.equipment || '',
+    secondaryMuscles: raw.secondaryMuscles || raw.secondary_muscles || [],
+    instructions: raw.instructions || [],
+  };
 }
 
 function json(body, status) {
