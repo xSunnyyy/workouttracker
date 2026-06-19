@@ -438,21 +438,45 @@
   // ---------- Exercise picker
   function openExercisePicker({ initial = [], onConfirm }) {
     let selected = new Set(initial);
+    let activeMuscle = 'All';
+
     const search = el('input', { type: 'text', placeholder: 'Search exercises' });
-    const searchBar = el('div', { class: 'search-bar glass', style: 'margin-bottom: 14px;' }, [
-      el('div', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>' }).firstChild
-        ? (() => { const w = el('span'); w.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>'; return w.firstChild; })()
-        : el('span'),
+    const searchIcon = el('span');
+    searchIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+    const searchBar = el('div', { class: 'search-bar glass', style: 'margin-bottom: 12px;' }, [
+      searchIcon.firstChild,
       search,
     ]);
+
+    const filtersWrap = el('div', { class: 'chips chips-scroll', style: 'margin-bottom: 14px;' });
+    const renderFilters = () => {
+      filtersWrap.innerHTML = '';
+      MUSCLE_GROUPS.forEach((m) => {
+        const chip = el('button', {
+          class: 'chip' + (m === activeMuscle ? ' active' : ''),
+          onclick: () => {
+            activeMuscle = m;
+            renderFilters();
+            renderList();
+          },
+        }, m);
+        filtersWrap.appendChild(chip);
+      });
+    };
+    renderFilters();
 
     const list = el('div', { class: 'picker-list' });
     const renderList = () => {
       list.innerHTML = '';
       const q = search.value.toLowerCase().trim();
-      const filtered = DB.getExercises().filter((e) =>
-        !q || e.name.toLowerCase().includes(q) || e.muscleGroup.toLowerCase().includes(q) || (e.keywords || []).some((k) => k.includes(q))
-      );
+      const filtered = DB.getExercises().filter((e) => {
+        const matchMuscle = activeMuscle === 'All' || e.muscleGroup === activeMuscle;
+        const matchQ = !q ||
+          e.name.toLowerCase().includes(q) ||
+          e.muscleGroup.toLowerCase().includes(q) ||
+          (e.keywords || []).some((k) => k.includes(q));
+        return matchMuscle && matchQ;
+      });
       if (!filtered.length) {
         list.appendChild(el('p', { class: 'row-sub', style: 'text-align:center; padding:20px;' }, 'No exercises found.'));
         return;
@@ -481,7 +505,7 @@
     search.addEventListener('input', renderList);
     renderList();
 
-    const body = el('div', {}, [searchBar, list]);
+    const body = el('div', {}, [searchBar, filtersWrap, list]);
     const confirm = el('button', { class: 'btn btn-primary btn-block' }, 'Add selected');
     confirm.onclick = () => {
       const ids = [...selected];
