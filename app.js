@@ -1028,33 +1028,31 @@
     const todayK = DB.getTodayKey();
     if (!macrosSelectedDate) macrosSelectedDate = todayK;
 
-    // --- 7-day chip row (most recent on the left, oldest on the right)
-    const dateCard = el('div', { class: 'glass card', style: 'padding: 14px 14px 10px;' });
-    const dateChips = el('div', { class: 'chips chips-scroll macro-day-chips' });
-    for (let i = 0; i < 7; i++) {
+    // --- 7-day chip row: oldest on the left, today on the right (so the
+    // most-recent day sits next to the scroll-end / thumb position).
+    const dateChips = el('div', { class: 'chips chips-scroll', style: 'margin-bottom: 14px;' });
+    for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = dateKey(d);
       const label = i === 0
         ? 'Today'
-        : i === 1
-          ? 'Yesterday'
-          : d.toLocaleDateString(undefined, { weekday: 'short' });
-      const sub = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        : d.toLocaleDateString(undefined, { weekday: 'short' }) +
+          ' ' + d.getDate();
       const chip = el('button', {
-        class: 'chip macro-day-chip' + (macrosSelectedDate === key ? ' active' : ''),
+        class: 'chip' + (macrosSelectedDate === key ? ' active' : ''),
         onclick: () => {
           macrosSelectedDate = key;
           renderMacros();
         },
-      }, [
-        el('span', { class: 'macro-day-label' }, label),
-        el('span', { class: 'macro-day-sub' }, sub),
-      ]);
+      }, label);
       dateChips.appendChild(chip);
     }
-    dateCard.appendChild(dateChips);
-    wrap.appendChild(dateCard);
+    wrap.appendChild(dateChips);
+    // Snap scroll position to the right so Today is in view on first paint.
+    requestAnimationFrame(() => {
+      dateChips.scrollLeft = dateChips.scrollWidth;
+    });
 
     const intake = DB.getIntake(macrosSelectedDate);
     const isToday = macrosSelectedDate === todayK;
@@ -1098,7 +1096,7 @@
 
       const tile = el('div', { class: 'macro-tile' });
 
-      // Header: label on top, smaller target text below.
+      // Header: macro label on top, smaller target text below.
       const head = el('div', { class: 'macro-tile-head' });
       const headLeft = el('div', {}, [
         el('div', { class: 'macro-tile-label', style: `--macro-color: ${def.color}` }, [
@@ -1108,13 +1106,12 @@
         el('div', { class: 'macro-tile-target' },
           target > 0 ? `target ${target} g` : 'no target set'),
       ]);
-      const remainingEl = el('span', { class: 'macro-remaining-inline' }, '');
       head.appendChild(headLeft);
-      head.appendChild(remainingEl);
       tile.appendChild(head);
 
       // Input row — type=text + inputmode=numeric is more reliable on iOS
       // than type=number which can cause focus jank with the spinner.
+      // Remaining text sits inline on the right of the input.
       const inputRow = el('div', { class: 'macro-tile-input-row' });
       const input = el('input', {
         type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
@@ -1123,8 +1120,10 @@
         autocomplete: 'off',
         'aria-label': def.label + ' grams eaten',
       });
+      const remainingEl = el('span', { class: 'macro-remaining-inline' }, '');
       inputRow.appendChild(input);
       inputRow.appendChild(el('span', { class: 'macro-tile-unit' }, 'g'));
+      inputRow.appendChild(remainingEl);
       tile.appendChild(inputRow);
 
       const bar = el('div', { class: 'macro-bar' });

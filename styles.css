@@ -1311,41 +1311,14 @@ a { color: inherit; text-decoration: none; }
   flex-wrap: wrap;
 }
 .macro-remaining-inline {
-  font-size: 13px;
-  font-weight: 700;
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text-dim);
-  text-align: right;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 .macro-remaining-inline.over {
   color: var(--danger);
-}
-
-/* 7-day picker chips */
-.macro-day-chips {
-  margin-bottom: 4px;
-  padding-bottom: 8px;
-}
-.macro-day-chip {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 56px;
-  padding: 8px 10px;
-  line-height: 1.1;
-}
-.macro-day-label {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.macro-day-sub {
-  font-size: 10px;
-  font-weight: 500;
-  opacity: 0.75;
 }
 .macro-tile-input-row input {
   font-family: var(--font-display);
