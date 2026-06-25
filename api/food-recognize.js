@@ -20,15 +20,21 @@ const MODELS = [
 const PROMPT = `You are analysing a photo a user took for nutrition tracking.
 
 If it's a nutrition label, read the values directly from the label.
-If it's prepared food, identify the dish and estimate macros for the visible portion.
+If it's a packaged item (bottle, can, box), read the serving size AND
+the total container size from the label so the user can log either.
+If it's prepared food, identify the dish and estimate macros for the
+visible portion.
 If you cannot tell what it is or there's no food, set confidence to "low".
 
 Respond with ONLY valid JSON in this exact shape (no markdown, no commentary):
 {
   "name": "short food name",
   "isLabel": false,
-  "servingDescription": "e.g. '1 cup', '100g', '1 slice'",
+  "isLiquid": false,
+  "servingDescription": "e.g. '1 cup', '100g', '1 slice', '240ml'",
   "servingGrams": 100,
+  "containerDescription": "e.g. '591ml bottle' or '12 oz can' — empty string if not a container",
+  "containerGrams": 0,
   "calories": 0,
   "protein": 0,
   "carbs": 0,
@@ -37,8 +43,10 @@ Respond with ONLY valid JSON in this exact shape (no markdown, no commentary):
   "confidence": "high"
 }
 
-Numbers must be in grams (or kcal for calories). If unknown, use 0.
-servingGrams is the weight in grams the other numbers correspond to.
+All weights in grams. For liquids, 1 ml ≈ 1 g is fine.
+servingGrams = grams that the calories/protein/carbs/fat/fiber numbers correspond to.
+containerGrams = total contents of the package (0 if not packaged or unknown).
+isLiquid = true if it's a drink (so the UI can offer fl oz / ml units).
 confidence: "high" if certain, "medium" if reasonable estimate, "low" if guessing.`;
 
 export default async function handler(req) {
@@ -116,8 +124,11 @@ export default async function handler(req) {
     const out = {
       name: String(parsed.name || 'Unknown food'),
       isLabel: !!parsed.isLabel,
+      isLiquid: !!parsed.isLiquid,
       servingDescription: String(parsed.servingDescription || ''),
       servingGrams: numOr(parsed.servingGrams, 100),
+      containerDescription: String(parsed.containerDescription || ''),
+      containerGrams: numOr(parsed.containerGrams, 0),
       calories: numOr(parsed.calories, 0),
       proteinG: numOr(parsed.protein ?? parsed.proteinG, 0),
       carbsG:   numOr(parsed.carbs   ?? parsed.carbsG,   0),

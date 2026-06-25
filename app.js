@@ -1307,18 +1307,30 @@
         }
         const { result } = await res.json();
         if (!result) { status.textContent = 'No result'; return; }
-        // Treat the AI output as a 1-portion "food" the user can confirm.
+        // AI returns per-serving macros — normalise to per-100g so the
+        // portion modal can scale uniformly with whatever unit the user picks.
+        const s = Number(result.servingGrams) || 100;
+        const num = (...keys) => {
+          for (const k of keys) {
+            const v = Number(result[k]);
+            if (Number.isFinite(v)) return v;
+          }
+          return 0;
+        };
         openPortionModal({
           id: 'ai-' + Date.now(),
           name: result.name,
           brand: '',
           image: '',
-          calories: result.servingGrams ? (result.calories * 100) / result.servingGrams : result.calories,
-          proteinG: result.servingGrams ? (result.proteinG * 100) / result.servingGrams : result.proteinG,
-          carbsG:   result.servingGrams ? (result.carbsG   * 100) / result.servingGrams : result.carbsG,
-          fatG:     result.servingGrams ? (result.fatG     * 100) / result.servingGrams : result.fatG,
-          fiberG:   result.servingGrams ? (result.fiberG   * 100) / result.servingGrams : result.fiberG,
-          servingSizeG: result.servingGrams,
+          calories: (num('calories') * 100) / s,
+          proteinG: (num('proteinG', 'protein') * 100) / s,
+          carbsG:   (num('carbsG',   'carbs')   * 100) / s,
+          fatG:     (num('fatG',     'fat')     * 100) / s,
+          fiberG:   (num('fiberG',   'fiber')   * 100) / s,
+          servingSizeG: Number(result.servingGrams) || null,
+          containerGrams: Number(result.containerGrams) || 0,
+          containerDescription: result.containerDescription || '',
+          isLiquid: !!result.isLiquid,
           source: 'ai',
           aiConfidence: result.confidence,
         });
@@ -1338,30 +1350,86 @@
     });
   }
 
-  // Portion confirmation. Food carries per-100g macros (or per-serving for
-  // AI results). User picks grams; we scale and log.
+  // Portion confirmation with flexible units.
+  // Food always carries per-100g macros; the unit selector converts whatever
+  // the user typed into grams via UNIT_TO_G, then we scale + log.
   function openPortionModal(food) {
-    const defaultGrams = Math.round(food.servingSizeG || 100);
+    // Build available units. Servings only show if the food has a known
+    // serving size; Container only shows if the food/AI gave a container
+    // weight; fl oz / ml only show prominently for liquids but stay
+    // available for everything.
+    const units = [];
+    if (food.servingSizeG && food.servingSizeG > 0) {
+      units.push({
+        key: 'serving',
+        label: `serving (${roundDisp(food.servingSizeG)} g)`,
+        toG: food.servingSizeG,
+      });
+    }
+    if (food.containerGrams && food.containerGrams > 0) {
+      units.push({
+        key: 'container',
+        label: `${food.containerDescription || 'container'} (${roundDisp(food.containerGrams)} g)`,
+        toG: food.containerGrams,
+      });
+    }
+    units.push({ key: 'g',   label: 'gram (g)',          toG: 1 });
+    units.push({ key: 'oz',  label: 'ounce (oz)',        toG: 28.3495 });
+    units.push({ key: 'flOz',label: 'fluid ounce (fl oz)', toG: 29.5735 });
+    units.push({ key: 'cup', label: 'cup',               toG: 240 });
+    units.push({ key: 'ml',  label: 'milliliter (ml)',   toG: 1 });
 
-    const gramsInput = el('input', {
-      type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
-      value: defaultGrams, autocomplete: 'off',
+    // Default unit: serving if known, else gram. Default count: 1 for
+    // serving/container, else the food's serving size in grams.
+    let defaultUnitKey = units[0].key;
+    let defaultCount = 1;
+    if (defaultUnitKey === 'g') {
+      defaultCount = Math.round(food.servingSizeG || 100);
+    }
+
+    const countInput = el('input', {
+      type: 'text', inputmode: 'decimal', pattern: '[0-9]*[.,]?[0-9]*',
+      value: String(defaultCount), autocomplete: 'off',
       class: 'macro-editor-input',
     });
-    gramsInput.addEventListener('input', () => {
-      gramsInput.value = gramsInput.value.replace(/[^0-9]/g, '');
+    countInput.addEventListener('input', () => {
+      // Allow digits, one decimal point.
+      countInput.value = countInput.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
       updatePreview();
     });
 
+    const unitSelect = el('select', { class: 'portion-unit-select' });
+    units.forEach((u) => {
+      const opt = el('option', { value: u.key }, u.label);
+      if (u.key === defaultUnitKey) opt.selected = true;
+      unitSelect.appendChild(opt);
+    });
+    unitSelect.addEventListener('change', updatePreview);
+
+    const inputRow = el('div', { class: 'portion-input-row' }, [
+      countInput, unitSelect,
+    ]);
+
+    const conversionEl = el('p', { class: 'portion-conversion' });
     const preview = el('div', { class: 'portion-preview' });
+
+    function currentGrams() {
+      const count = parseFloat(countInput.value) || 0;
+      const unit = units.find((u) => u.key === unitSelect.value) || units[0];
+      return Math.max(0, count * unit.toG);
+    }
+
     function updatePreview() {
-      const g = Math.max(0, parseInt(gramsInput.value, 10) || 0);
+      const g = currentGrams();
       const scale = g / 100;
       const cal = Math.round(food.calories * scale);
       const p = Math.round(food.proteinG * scale);
       const c = Math.round(food.carbsG * scale);
       const f = Math.round(food.fatG * scale);
       const fb = Math.round(food.fiberG * scale);
+
+      conversionEl.textContent = `= ${roundDisp(g)} g · ${roundDisp(g / 28.3495)} oz`;
+
       preview.innerHTML = '';
       preview.appendChild(el('div', { class: 'portion-cal' }, `${cal} kcal`));
       preview.appendChild(el('div', { class: 'portion-macros' },
@@ -1369,26 +1437,28 @@
     }
     updatePreview();
 
+    const subtitle = food.name + (food.brand ? ` · ${food.brand}` : '') +
+      (food.aiConfidence ? ` · ${food.aiConfidence} confidence` : '');
+
     const body = el('div', {}, [
-      el('p', { class: 'row-sub portion-name' },
-        food.name + (food.brand ? ` · ${food.brand}` : '') +
-        (food.aiConfidence ? ` · ${food.aiConfidence} confidence` : '')),
+      el('p', { class: 'row-sub portion-name' }, subtitle),
       el('label', { class: 'field' }, [
-        el('span', {}, 'Amount eaten (g)'),
-        gramsInput,
+        el('span', {}, 'How much?'),
+        inputRow,
       ]),
+      conversionEl,
       preview,
     ]);
 
     const save = el('button', { class: 'btn btn-primary btn-block' }, 'Log this food');
     save.onclick = () => {
-      const g = Math.max(0, parseInt(gramsInput.value, 10) || 0);
+      const g = currentGrams();
       if (g <= 0) return;
       const scale = g / 100;
       DB.addIntakeEntry(macrosSelectedDate, {
         name: food.name,
         brand: food.brand || '',
-        grams: g,
+        grams: Math.round(g),
         calories: Math.round(food.calories * scale),
         proteinG: Math.round(food.proteinG * scale),
         carbsG:   Math.round(food.carbsG   * scale),
@@ -1402,7 +1472,14 @@
     };
 
     openModal({ title: 'Log food', body, footer: [save] });
-    setTimeout(() => gramsInput.focus(), 80);
+    setTimeout(() => { countInput.focus(); countInput.select(); }, 80);
+  }
+
+  function roundDisp(n) {
+    if (!Number.isFinite(n)) return '0';
+    if (n >= 100) return String(Math.round(n));
+    if (n >= 10)  return String(Math.round(n * 10) / 10);
+    return String(Math.round(n * 100) / 100);
   }
 
   // Tap-to-edit modal — one numeric input + Save. Keeps the visual layer
