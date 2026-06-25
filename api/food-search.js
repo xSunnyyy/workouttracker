@@ -67,7 +67,10 @@ const USDA_ENDPOINT = 'https://api.nal.usda.gov/fdc/v1/foods/search';
 async function searchUSDA(q, apiKey) {
   const url = new URL(USDA_ENDPOINT);
   url.searchParams.set('api_key', apiKey);
-  url.searchParams.set('query', q);
+  // Append '*' to each plain term so partial words match as the user types
+  // ('mcdon' → 'mcdon*' → matches 'mcdonalds'). Leaves quoted phrases and
+  // existing wildcards alone.
+  url.searchParams.set('query', expandQuery(q));
   url.searchParams.set('pageSize', '24');
   // No dataType filter — USDA returns 400 for certain query+filter combos,
   // and the default (all types) gives us the broadest coverage anyway.
@@ -147,6 +150,23 @@ function normaliseUsda(food) {
     fatG:     round(fat),
     fiberG:   round(fiber),
   };
+}
+
+// Append '*' to each plain word so USDA's Lucene-backed search does prefix
+// matching ('mcdon*' matches 'mcdonalds'). Don't touch already-wildcarded
+// terms or quoted phrases.
+function expandQuery(q) {
+  return String(q || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => {
+      if (t.includes('*') || t.startsWith('"') || t.startsWith('+') || t.startsWith('-')) return t;
+      // Strip any trailing punctuation so 'cheese,' becomes 'cheese*'.
+      const cleaned = t.replace(/[^\w']+$/g, '');
+      return cleaned ? cleaned + '*' : t;
+    })
+    .join(' ');
 }
 
 // USDA gives serving sizes in many units, sometimes as ISO codes like
