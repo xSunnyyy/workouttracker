@@ -1232,33 +1232,39 @@ a { color: inherit; text-decoration: none; }
 .macro-cal-card {
   text-align: left;
 }
-.macro-cal-card .eyebrow { margin-bottom: 6px; }
+.macro-cal-card .eyebrow { margin-bottom: 8px; }
 .macro-cal-row {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
-.macro-cal-input {
+.macro-cal-big {
   font-family: var(--font-display);
   font-size: 44px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  background: transparent;
-  border: none;
-  padding: 0;
-  width: 6ch;
   color: var(--text);
+  line-height: 1.1;
 }
-.macro-cal-input:focus { outline: none; }
-.macro-cal-input::-webkit-outer-spin-button,
-.macro-cal-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.macro-cal-input { -moz-appearance: textfield; appearance: textfield; }
+.macro-cal-sep {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-dim);
+  letter-spacing: -0.02em;
+}
 .macro-cal-unit {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  margin-left: 4px;
+}
+.macro-remaining {
+  margin-top: 8px;
+  font-weight: 600;
 }
 
 .macro-tile {
@@ -1293,6 +1299,16 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: baseline;
   gap: 8px;
+  flex-wrap: wrap;
+}
+.macro-remaining-inline {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.macro-remaining-inline.over {
+  color: var(--danger);
 }
 .macro-tile-input-row input {
   font-family: var(--font-display);
@@ -1319,6 +1335,10 @@ a { color: inherit; text-decoration: none; }
   border-radius: 999px;
   background: var(--border);
   overflow: hidden;
+}
+.macro-bar-lg {
+  margin-top: 12px;
+  height: 10px;
 }
 .macro-bar-fill {
   height: 100%;

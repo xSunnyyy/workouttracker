@@ -978,16 +978,21 @@
   }
 
   // ---------- Settings
-  // ---------- Macros
-  // Calorie targets are stored as totals; macros as grams. Presets compute
-  // gram targets from calorie totals using the standard 4/4/9 kcal/g values.
+  // ---------- Macros: targets (Settings) + today's intake (Macros tab)
   const MACRO_PRESETS = {
-    balanced:     { label: 'Balanced',     pct: { protein: 30, carbs: 40, fat: 30 } },
+    balanced:       { label: 'Balanced',     pct: { protein: 30, carbs: 40, fat: 30 } },
     'high-protein': { label: 'High Protein', pct: { protein: 40, carbs: 30, fat: 30 } },
-    'low-carb':   { label: 'Low Carb',     pct: { protein: 35, carbs: 15, fat: 50 } },
-    keto:         { label: 'Keto',         pct: { protein: 25, carbs: 5,  fat: 70 } },
-    custom:       { label: 'Custom',       pct: null },
+    'low-carb':     { label: 'Low Carb',     pct: { protein: 35, carbs: 15, fat: 50 } },
+    keto:           { label: 'Keto',         pct: { protein: 25, carbs: 5,  fat: 70 } },
+    custom:         { label: 'Custom',       pct: null },
   };
+
+  const MACRO_DEFS = [
+    { key: 'proteinG', label: 'Protein', kcalPerG: 4, color: 'var(--macro-protein)' },
+    { key: 'carbsG',   label: 'Carbs',   kcalPerG: 4, color: 'var(--macro-carbs)' },
+    { key: 'fatG',     label: 'Fat',     kcalPerG: 9, color: 'var(--macro-fat)' },
+    { key: 'fiberG',   label: 'Fiber',   kcalPerG: 0, color: 'var(--macro-fiber)' },
+  ];
 
   function computeFromPreset(cal, presetKey) {
     const p = MACRO_PRESETS[presetKey];
@@ -1000,146 +1005,241 @@
     };
   }
 
-  function caloriesFromGrams(m) {
+  function caloriesFromMacros(m) {
     return Math.round((Number(m.proteinG) || 0) * 4 +
                       (Number(m.carbsG)   || 0) * 4 +
                       (Number(m.fatG)     || 0) * 9);
   }
 
+  function fmtDay(d = new Date()) {
+    return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  }
+
+  // ---------- Macros tab — today's intake tracker
+  // Built once; inputs surgically update the dependent text + bar widths so
+  // typing on mobile doesn't lose focus mid-keystroke.
   function renderMacros() {
     const wrap = $('#macros-content');
     if (!wrap) return;
     wrap.innerHTML = '';
-    const m = DB.getMacros();
 
-    // --- Calorie target card
+    const targets = DB.getMacroTargets();
+    const intake = DB.getTodayIntake();
+
+    // --- Calorie summary card (computed from macros, not editable here)
     const calCard = el('div', { class: 'glass card macro-cal-card' });
-    calCard.appendChild(el('p', { class: 'eyebrow' }, 'Daily target'));
+    calCard.appendChild(el('p', { class: 'eyebrow' }, `Today · ${fmtDay()}`));
+
     const calRow = el('div', { class: 'macro-cal-row' });
-    const calInput = el('input', {
-      type: 'number', inputmode: 'numeric', min: '0', step: '50',
-      value: m.targetCalories || 0,
-      class: 'macro-cal-input',
-      'aria-label': 'Daily calorie target',
-    });
-    calInput.addEventListener('input', () => {
-      const cal = Math.max(0, parseInt(calInput.value, 10) || 0);
-      DB.setMacros({ targetCalories: cal });
-      // Recompute grams from current preset (unless Custom)
-      if (m.preset && m.preset !== 'custom') {
-        const next = computeFromPreset(cal, m.preset);
-        if (next) DB.setMacros(next);
-      }
-      renderMacros();
-    });
-    calRow.appendChild(calInput);
-    calRow.appendChild(el('span', { class: 'macro-cal-unit' }, 'kcal'));
+    const calBig = el('span', { class: 'macro-cal-big' }, '0');
+    const calSep = el('span', { class: 'macro-cal-sep' }, ` / ${targets.calories.toLocaleString()}`);
+    const calUnit = el('span', { class: 'macro-cal-unit' }, 'kcal');
+    calRow.appendChild(calBig);
+    calRow.appendChild(calSep);
+    calRow.appendChild(calUnit);
     calCard.appendChild(calRow);
 
-    // From-grams total under the input — helps user see when manual edits diverge.
-    const fromGrams = caloriesFromGrams(m);
-    const diff = fromGrams - (m.targetCalories || 0);
-    const diffText = diff === 0
-      ? `Macros total exactly ${fromGrams.toLocaleString()} kcal`
-      : `Macros total ${fromGrams.toLocaleString()} kcal (${diff > 0 ? '+' : ''}${diff})`;
-    calCard.appendChild(el('p', { class: 'row-sub', style: 'margin-top: 4px;' }, diffText));
+    const calBar = el('div', { class: 'macro-bar macro-bar-lg' });
+    const calFill = el('div', { class: 'macro-bar-fill' });
+    calBar.appendChild(calFill);
+    calCard.appendChild(calBar);
+
+    const calRemaining = el('p', { class: 'row-sub macro-remaining' }, '');
+    calCard.appendChild(calRemaining);
     wrap.appendChild(calCard);
 
-    // --- Preset chips
-    const presetCard = el('div', { class: 'glass card' });
-    presetCard.appendChild(el('h3', { class: 'card-title' }, 'Preset'));
-    presetCard.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 12px;' },
-      'Auto-calculate macros from your calorie target.'));
-    const chips = el('div', { class: 'chips' });
-    Object.entries(MACRO_PRESETS).forEach(([key, val]) => {
-      const chip = el('button', {
-        class: 'chip' + (m.preset === key ? ' active' : ''),
-        onclick: () => {
-          if (key === 'custom') {
-            DB.setMacros({ preset: 'custom' });
-          } else {
-            const next = computeFromPreset(m.targetCalories || 0, key);
-            DB.setMacros({ preset: key, ...next });
-          }
-          renderMacros();
-        },
-      }, val.label);
-      chips.appendChild(chip);
-    });
-    presetCard.appendChild(chips);
-    wrap.appendChild(presetCard);
-
-    // --- Macro tiles
+    // --- Per-macro tiles
     const macrosCard = el('div', { class: 'glass card' });
-    macrosCard.appendChild(el('h3', { class: 'card-title' }, 'Macros'));
+    macrosCard.appendChild(el('h3', { class: 'card-title' }, 'Intake'));
+    macrosCard.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 14px;' },
+      'Enter the grams you\'ve eaten today.'));
 
-    const macroDefs = [
-      { key: 'proteinG', label: 'Protein', kcalPerG: 4, color: 'var(--macro-protein)' },
-      { key: 'carbsG',   label: 'Carbs',   kcalPerG: 4, color: 'var(--macro-carbs)' },
-      { key: 'fatG',     label: 'Fat',     kcalPerG: 9, color: 'var(--macro-fat)' },
-      { key: 'fiberG',   label: 'Fiber',   kcalPerG: 0, color: 'var(--macro-fiber)' },
-    ];
+    // Track tile refs so update() can poke them surgically.
+    const refs = [];
 
-    macroDefs.forEach((def) => {
-      const grams = Number(m[def.key]) || 0;
-      const kcal = grams * def.kcalPerG;
-      const pct = (m.targetCalories && def.kcalPerG)
-        ? Math.round((kcal / m.targetCalories) * 100)
-        : null;
+    MACRO_DEFS.forEach((def) => {
+      const target = Math.max(0, Number(targets[def.key]) || 0);
+      const eaten = Math.max(0, Number(intake[def.key]) || 0);
 
       const tile = el('div', { class: 'macro-tile' });
 
-      const head = el('div', { class: 'macro-tile-head' }, [
-        el('div', { class: 'macro-tile-label', style: `--macro-color: ${def.color}` }, [
-          el('span', { class: 'macro-dot' }),
-          def.label,
-        ]),
-        el('div', { class: 'macro-tile-pct' },
-          def.kcalPerG ? (pct != null ? `${pct}% · ${kcal} kcal` : `${kcal} kcal`)
-                       : (m.targetCalories ? `target ${Math.round((m.targetCalories*14)/1000)}g` : '')),
-      ]);
+      const head = el('div', { class: 'macro-tile-head' });
+      head.appendChild(el('div', { class: 'macro-tile-label', style: `--macro-color: ${def.color}` }, [
+        el('span', { class: 'macro-dot' }),
+        def.label,
+      ]));
+      const headRight = el('div', { class: 'macro-tile-pct' }, `target ${target} g`);
+      head.appendChild(headRight);
       tile.appendChild(head);
 
       const inputRow = el('div', { class: 'macro-tile-input-row' });
       const input = el('input', {
         type: 'number', inputmode: 'numeric', min: '0', step: '1',
-        value: grams,
-        'aria-label': def.label + ' grams',
+        value: eaten || '',
+        placeholder: '0',
+        'aria-label': def.label + ' grams eaten today',
       });
-      input.addEventListener('input', () => {
-        const v = Math.max(0, parseInt(input.value, 10) || 0);
-        DB.setMacros({ [def.key]: v, preset: 'custom' });
-        renderMacros();
-      });
+      const remainingEl = el('span', { class: 'macro-remaining-inline' }, '');
       inputRow.appendChild(input);
       inputRow.appendChild(el('span', { class: 'macro-tile-unit' }, 'g'));
+      inputRow.appendChild(remainingEl);
       tile.appendChild(inputRow);
 
-      // Progress bar visualises % of target calories from this macro
-      if (def.kcalPerG && m.targetCalories) {
-        const bar = el('div', { class: 'macro-bar' });
-        const fill = el('div', { class: 'macro-bar-fill', style: `width:${Math.min(100, pct || 0)}%; background:${def.color}` });
-        bar.appendChild(fill);
-        tile.appendChild(bar);
-      }
+      const bar = el('div', { class: 'macro-bar' });
+      const fill = el('div', { class: 'macro-bar-fill', style: `background:${def.color}` });
+      bar.appendChild(fill);
+      tile.appendChild(bar);
+
+      // Input only updates state + dependent display elements. Does not
+      // re-render the whole macros page, so focus is preserved on mobile.
+      input.addEventListener('input', () => {
+        const v = Math.max(0, parseInt(input.value, 10) || 0);
+        DB.setTodayIntake({ [def.key]: v });
+        update();
+      });
+
+      refs.push({ def, target, input, fill, remainingEl });
       macrosCard.appendChild(tile);
     });
 
     wrap.appendChild(macrosCard);
 
-    // --- Reset to preset
-    if (m.preset === 'custom') {
-      const resetCard = el('div', { class: 'glass card' });
-      resetCard.appendChild(el('h3', { class: 'card-title' }, 'Reset'));
-      resetCard.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 12px;' },
-        'You edited grams manually. Pick a preset above to recalculate.'));
-      wrap.appendChild(resetCard);
+    // --- Reset button
+    const resetBtn = el('button', { class: 'btn btn-ghost btn-block', style: 'margin-top: 12px;' },
+      'Reset today');
+    resetBtn.onclick = () => {
+      if (!confirm("Clear today's intake?")) return;
+      DB.resetTodayIntake();
+      refs.forEach((r) => { r.input.value = ''; });
+      update();
+      toast('Today cleared');
+    };
+    wrap.appendChild(resetBtn);
+
+    // Surgical update — no DOM destruction.
+    function update() {
+      const cur = DB.getTodayIntake();
+      const eatenCal = caloriesFromMacros(cur);
+      calBig.textContent = eatenCal.toLocaleString();
+      const calPct = targets.calories > 0 ? Math.min(100, (eatenCal / targets.calories) * 100) : 0;
+      calFill.style.width = calPct + '%';
+      // Tint calorie bar green-ish (accent) when on track, redder when over.
+      const calOver = targets.calories > 0 && eatenCal > targets.calories;
+      calFill.style.background = calOver
+        ? 'linear-gradient(90deg, var(--macro-protein), var(--danger))'
+        : 'linear-gradient(90deg, var(--accent), var(--accent-2))';
+      const remCal = (targets.calories || 0) - eatenCal;
+      calRemaining.textContent = remCal >= 0
+        ? `${remCal.toLocaleString()} kcal remaining`
+        : `${Math.abs(remCal).toLocaleString()} kcal over target`;
+
+      refs.forEach((r) => {
+        const eaten = Math.max(0, Number(cur[r.def.key]) || 0);
+        const rem = r.target - eaten;
+        const pct = r.target > 0 ? Math.min(100, (eaten / r.target) * 100) : 0;
+        r.fill.style.width = pct + '%';
+        r.remainingEl.textContent = r.target > 0
+          ? (rem >= 0 ? `${rem} g remaining` : `${Math.abs(rem)} g over`)
+          : 'no target set';
+        r.remainingEl.classList.toggle('over', rem < 0);
+      });
     }
+    update();
+  }
+
+  // ---------- Settings: Nutrition targets card
+  function renderNutritionCard() {
+    const card = $('#nutrition-card');
+    if (!card) return;
+    card.innerHTML = '';
+    const targets = DB.getMacroTargets();
+
+    card.appendChild(el('h3', { class: 'card-title' }, 'Nutrition targets'));
+    card.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 14px;' },
+      'Daily calorie and macro goals. Pick a preset to auto-fill the grams.'));
+
+    // Calorie target input
+    const calInput = el('input', {
+      type: 'number', inputmode: 'numeric', min: '0', step: '50',
+      value: targets.calories || '',
+      placeholder: '2000',
+    });
+    card.appendChild(el('label', { class: 'field' }, [
+      el('span', {}, 'Daily calories'),
+      calInput,
+    ]));
+
+    card.appendChild(el('div', { class: 'ex-section-title', style: 'margin-top: 16px;' }, 'Preset'));
+    const chips = el('div', { class: 'chips' });
+    card.appendChild(chips);
+
+    card.appendChild(el('div', { class: 'ex-section-title', style: 'margin-top: 16px;' }, 'Grams'));
+    const gramsGrid = el('div', { class: 'metric-grid' });
+    const gramInputs = {};
+    MACRO_DEFS.forEach((def) => {
+      const input = el('input', {
+        type: 'number', inputmode: 'numeric', min: '0', step: '1',
+        value: targets[def.key] || '',
+        placeholder: '0',
+      });
+      gramInputs[def.key] = input;
+      gramsGrid.appendChild(el('label', { class: 'field' }, [
+        el('span', {}, `${def.label} (g)`),
+        input,
+      ]));
+    });
+    card.appendChild(gramsGrid);
+
+    function renderChips() {
+      chips.innerHTML = '';
+      const current = DB.getMacroTargets();
+      Object.entries(MACRO_PRESETS).forEach(([key, val]) => {
+        const chip = el('button', {
+          class: 'chip' + (current.preset === key ? ' active' : ''),
+          onclick: () => {
+            if (key === 'custom') {
+              DB.setMacroTargets({ preset: 'custom' });
+            } else {
+              const cal = Math.max(0, parseInt(calInput.value, 10) || 0);
+              const next = computeFromPreset(cal, key);
+              DB.setMacroTargets({ preset: key, ...next });
+              // Reflect into inputs without rebuilding the whole card
+              MACRO_DEFS.forEach((def) => { gramInputs[def.key].value = next[def.key] || ''; });
+            }
+            renderChips();
+          },
+        }, val.label);
+        chips.appendChild(chip);
+      });
+    }
+    renderChips();
+
+    // Wire inputs: editing recomputes preset-fill or flips to Custom.
+    calInput.addEventListener('input', () => {
+      const cal = Math.max(0, parseInt(calInput.value, 10) || 0);
+      const current = DB.getMacroTargets();
+      DB.setMacroTargets({ calories: cal });
+      if (current.preset && current.preset !== 'custom') {
+        const next = computeFromPreset(cal, current.preset);
+        if (next) {
+          DB.setMacroTargets(next);
+          MACRO_DEFS.forEach((def) => { gramInputs[def.key].value = next[def.key] || ''; });
+        }
+      }
+    });
+    MACRO_DEFS.forEach((def) => {
+      gramInputs[def.key].addEventListener('input', () => {
+        const v = Math.max(0, parseInt(gramInputs[def.key].value, 10) || 0);
+        DB.setMacroTargets({ [def.key]: v, preset: 'custom' });
+        renderChips();
+      });
+    });
   }
 
   function renderSettings() {
     renderSyncCard();
     renderMetricsFields();
+    renderNutritionCard();
     renderDotChart();
   }
 

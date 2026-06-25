@@ -15,16 +15,49 @@ const DB = (() => {
     settings: { theme: 'dark', unit: 'kg' },
   });
 
-  // Default macros: 2000 kcal, balanced split (30/40/30 P/C/F), fiber 14g/1000kcal.
+  // Default macros: 2000 kcal target with a balanced (30/40/30) split,
+  // fiber at 14g per 1000 kcal. Daily intake is stored per-date so the
+  // Macros tab can track how far through the day's targets you are.
   function defaultMacros() {
     return {
-      targetCalories: 2000,
-      preset: 'balanced',
-      proteinG: 150,
-      carbsG: 200,
-      fatG: 67,
-      fiberG: 28,
+      targets: {
+        calories: 2000,
+        preset: 'balanced',
+        proteinG: 150,
+        carbsG: 200,
+        fatG: 67,
+        fiberG: 28,
+      },
+      intake: {},
     };
+  }
+
+  function migrateMacros(raw) {
+    const out = defaultMacros();
+    if (!raw || typeof raw !== 'object') return out;
+    // New shape already
+    if (raw.targets) {
+      out.targets = Object.assign(out.targets, raw.targets);
+      out.intake = raw.intake || {};
+      return out;
+    }
+    // Legacy flat shape: hoist into targets.
+    out.targets.calories  = raw.targetCalories ?? out.targets.calories;
+    out.targets.preset    = raw.preset         ?? out.targets.preset;
+    out.targets.proteinG  = raw.proteinG       ?? out.targets.proteinG;
+    out.targets.carbsG    = raw.carbsG         ?? out.targets.carbsG;
+    out.targets.fatG      = raw.fatG           ?? out.targets.fatG;
+    out.targets.fiberG    = raw.fiberG         ?? out.targets.fiberG;
+    return out;
+  }
+
+  // Local-timezone YYYY-MM-DD key for today (so day boundaries align with
+  // the user's clock, not UTC).
+  function todayKey(d = new Date()) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 
   let state = null;
@@ -67,7 +100,7 @@ const DB = (() => {
 
     parsed.programs = parsed.programs || [];
     parsed.workouts = parsed.workouts || [];
-    parsed.macros = Object.assign(defaultMacros(), parsed.macros || {});
+    parsed.macros = migrateMacros(parsed.macros);
 
     return parsed;
   }
@@ -279,9 +312,32 @@ const DB = (() => {
   }
 
   // ----- Macros
-  function getMacros() { return getState().macros; }
-  function setMacros(m) {
-    Object.assign(getState().macros, m);
+  function getMacroTargets() { return getState().macros.targets; }
+  function setMacroTargets(fields) {
+    Object.assign(getState().macros.targets, fields);
+    save();
+  }
+  function getTodayIntake() {
+    const key = todayKey();
+    const intake = getState().macros.intake;
+    return Object.assign(
+      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
+      intake[key] || {},
+    );
+  }
+  function setTodayIntake(fields) {
+    const key = todayKey();
+    const intake = getState().macros.intake;
+    intake[key] = Object.assign(
+      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
+      intake[key] || {},
+      fields,
+    );
+    save();
+  }
+  function resetTodayIntake() {
+    const key = todayKey();
+    delete getState().macros.intake[key];
     save();
   }
 
@@ -330,7 +386,7 @@ const DB = (() => {
     getWorkouts, getWorkout, saveWorkout, deleteWorkout,
     getExerciseHistory,
     getMetrics, setMetrics,
-    getMacros, setMacros,
+    getMacroTargets, setMacroTargets, getTodayIntake, setTodayIntake, resetTodayIntake,
     getSettings, setSetting,
     totalVolume, workoutsInRange, workoutsThisWeek,
     replaceFromCloud, pushNow,
