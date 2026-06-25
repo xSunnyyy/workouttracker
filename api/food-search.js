@@ -20,20 +20,35 @@ export default async function handler(req) {
   const usdaKey = process.env.USDA_API_KEY;
   let lastErr = null;
 
-  // 1) USDA FoodData Central (preferred)
+  // 1) USDA FoodData Central (preferred). If the key is set we try USDA
+  //    and ONLY fall back to OFF on 5xx/network errors. A 4xx response
+  //    (bad key, quota) is surfaced loudly so the user knows to fix it
+  //    rather than seeing junk OFF results.
   if (usdaKey) {
     try {
       const results = await searchUSDA(q, usdaKey);
       return jsonCached({ results, source: 'usda' });
     } catch (e) {
+      if (e.status && e.status >= 400 && e.status < 500) {
+        return json({
+          error: `USDA rejected the request (${e.status}). Check that USDA_API_KEY is correct in Vercel → Settings → Environment Variables, and redeploy.`,
+          detail: String(e.message || '').slice(0, 200),
+        }, e.status === 403 ? 403 : 502);
+      }
       lastErr = e;
     }
   }
 
-  // 2) Open Food Facts (fallback — better than nothing)
+  // 2) Open Food Facts (fallback or default if no USDA key)
   try {
     const results = await searchOFF(q);
-    return jsonCached({ results, source: 'openfoodfacts' });
+    return jsonCached({
+      results,
+      source: 'openfoodfacts',
+      note: usdaKey
+        ? 'Fell back to Open Food Facts — USDA was unavailable.'
+        : 'Using Open Food Facts. Add USDA_API_KEY in Vercel for better results.',
+    });
   } catch (e) {
     lastErr = e;
   }
@@ -64,7 +79,9 @@ async function searchUSDA(q, apiKey) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    throw new Error(`USDA HTTP ${res.status}: ${text.slice(0, 200)}`);
+    const err = new Error(`USDA HTTP ${res.status}: ${text.slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
   const data = await res.json();
   const foods = data.foods || [];
@@ -219,7 +236,8 @@ function jsonCached(body) {
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800',
+      // Short cache so the source / db can change without stale results.
+      'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=3600',
     },
   });
 }
