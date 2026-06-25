@@ -69,17 +69,15 @@ async function searchUSDA(q, apiKey) {
   url.searchParams.set('api_key', apiKey);
   url.searchParams.set('query', q);
   url.searchParams.set('pageSize', '24');
-  // Prioritise the most useful data types: Survey/FNDDS is what people
-  // actually eat ('egg and cheese on biscuit'), Foundation + SR Legacy
-  // are generic ingredients, Branded covers grocery products.
-  url.searchParams.set('dataType', 'Survey (FNDDS),Foundation,SR Legacy,Branded');
+  // No dataType filter — USDA returns 400 for certain query+filter combos,
+  // and the default (all types) gives us the broadest coverage anyway.
 
   const res = await fetch(url.toString(), {
     headers: { 'Accept': 'application/json' },
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    const err = new Error(`USDA HTTP ${res.status}: ${text.slice(0, 200)}`);
+    const err = new Error(`USDA HTTP ${res.status}: ${text.slice(0, 300)}`);
     err.status = res.status;
     throw err;
   }
@@ -126,7 +124,10 @@ function normaliseUsda(food) {
   // Convert the serving size to grams across the most common USDA units so
   // foods like '1 burger', '1 cup', '12 oz' all give us a usable per-serving
   // weight (and therefore a usable 'serving' unit in the portion modal).
-  const servingG = servingToGrams(food.servingSize, food.servingSizeUnit);
+  // Fall back to parsing '(155g)' out of the household text if the direct
+  // serving fields don't yield grams.
+  let servingG = servingToGrams(food.servingSize, food.servingSizeUnit);
+  if (!servingG) servingG = gramsFromText(food.householdServingFullText);
 
   return {
     id: 'usda-' + (food.fdcId || food.description),
@@ -148,22 +149,39 @@ function normaliseUsda(food) {
   };
 }
 
-// USDA gives serving sizes in many units. Convert to grams (approximate).
+// USDA gives serving sizes in many units, sometimes as ISO codes like
+// GRM/MLT for branded items. Convert to grams (approximate for liquids).
 function servingToGrams(size, unit) {
   const n = Number(size);
   if (!Number.isFinite(n) || n <= 0) return null;
   const u = String(unit || '').trim().toLowerCase();
-  if (!u || u === 'g' || u === 'gram' || u === 'grams') return n;
+  if (!u) return null;
+  // Grams family
+  if (['g', 'gm', 'gram', 'grams', 'grm'].includes(u)) return n;
   if (u === 'mg') return n / 1000;
   if (u === 'kg') return n * 1000;
-  if (u === 'ml' || u === 'milliliter' || u === 'millilitre') return n; // ~1 g for water
-  if (u === 'l' || u === 'liter' || u === 'litre') return n * 1000;
-  if (u === 'oz') return n * 28.3495;
-  if (u === 'fl oz' || u === 'floz') return n * 29.5735;
-  if (u === 'cup' || u === 'cups') return n * 240;
-  if (u === 'tbsp' || u === 'tablespoon' || u === 'tablespoons') return n * 15;
-  if (u === 'tsp' || u === 'teaspoon' || u === 'teaspoons') return n * 5;
-  // Unknown unit — return null so we at least know the serving exists.
+  // Liquid family (1 ml ≈ 1 g)
+  if (['ml', 'mlt', 'milliliter', 'millilitre', 'milliliters', 'millilitres'].includes(u)) return n;
+  if (['l', 'lt', 'liter', 'litre', 'liters', 'litres'].includes(u)) return n * 1000;
+  // Imperial
+  if (['oz', 'ozm', 'ounce', 'ounces'].includes(u)) return n * 28.3495;
+  if (['fl oz', 'floz', 'oza'].includes(u)) return n * 29.5735;
+  if (['cup', 'cups'].includes(u)) return n * 240;
+  if (['tbsp', 'tablespoon', 'tablespoons', 'tbs'].includes(u)) return n * 15;
+  if (['tsp', 'teaspoon', 'teaspoons'].includes(u)) return n * 5;
+  // Whole-item units (USDA uses 'piece', 'each' etc) — we don't know the
+  // weight so return null and let the household text fallback try.
+  return null;
+}
+
+// Extract '(155 g)' from strings like '1 burger (155 g)' or '1 cup (240ml)'.
+function gramsFromText(text) {
+  if (!text) return null;
+  const m = String(text).match(/\(\s*([\d.]+)\s*(g|gm|gram|grams|ml|mlt|milliliter|millilitre)\s*\)/i);
+  if (m) {
+    const n = parseFloat(m[1]);
+    return Number.isFinite(n) ? n : null;
+  }
   return null;
 }
 
