@@ -1015,20 +1015,56 @@
     return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
   }
 
-  // ---------- Macros tab — today's intake tracker
-  // Built once; inputs surgically update the dependent text + bar widths so
-  // typing on mobile doesn't lose focus mid-keystroke.
+  // ---------- Macros tab — daily intake tracker with a 7-day picker
+  // Page is built once per day-selection; inputs surgically update the
+  // dependent text + bar widths so typing on mobile doesn't lose focus.
+  let macrosSelectedDate = null;
   function renderMacros() {
     const wrap = $('#macros-content');
     if (!wrap) return;
     wrap.innerHTML = '';
 
     const targets = DB.getMacroTargets();
-    const intake = DB.getTodayIntake();
+    const todayK = DB.getTodayKey();
+    if (!macrosSelectedDate) macrosSelectedDate = todayK;
 
-    // --- Calorie summary card (computed from macros, not editable here)
+    // --- 7-day chip row (most recent on the left, oldest on the right)
+    const dateCard = el('div', { class: 'glass card', style: 'padding: 14px 14px 10px;' });
+    const dateChips = el('div', { class: 'chips chips-scroll macro-day-chips' });
+    for (let i = 0; i < 7; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = dateKey(d);
+      const label = i === 0
+        ? 'Today'
+        : i === 1
+          ? 'Yesterday'
+          : d.toLocaleDateString(undefined, { weekday: 'short' });
+      const sub = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      const chip = el('button', {
+        class: 'chip macro-day-chip' + (macrosSelectedDate === key ? ' active' : ''),
+        onclick: () => {
+          macrosSelectedDate = key;
+          renderMacros();
+        },
+      }, [
+        el('span', { class: 'macro-day-label' }, label),
+        el('span', { class: 'macro-day-sub' }, sub),
+      ]);
+      dateChips.appendChild(chip);
+    }
+    dateCard.appendChild(dateChips);
+    wrap.appendChild(dateCard);
+
+    const intake = DB.getIntake(macrosSelectedDate);
+    const isToday = macrosSelectedDate === todayK;
+
+    // --- Calorie summary
     const calCard = el('div', { class: 'glass card macro-cal-card' });
-    calCard.appendChild(el('p', { class: 'eyebrow' }, `Today · ${fmtDay()}`));
+    const labelText = isToday
+      ? `Today · ${fmtDay()}`
+      : fmtDayFromKey(macrosSelectedDate);
+    calCard.appendChild(el('p', { class: 'eyebrow' }, labelText));
 
     const calRow = el('div', { class: 'macro-cal-row' });
     const calBig = el('span', { class: 'macro-cal-big' }, '0');
@@ -1052,9 +1088,8 @@
     const macrosCard = el('div', { class: 'glass card' });
     macrosCard.appendChild(el('h3', { class: 'card-title' }, 'Intake'));
     macrosCard.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 14px;' },
-      'Enter the grams you\'ve eaten today.'));
+      isToday ? 'Enter the grams you\'ve eaten today.' : 'Editing past day — changes are saved against the selected date.'));
 
-    // Track tile refs so update() can poke them surgically.
     const refs = [];
 
     MACRO_DEFS.forEach((def) => {
@@ -1063,26 +1098,33 @@
 
       const tile = el('div', { class: 'macro-tile' });
 
+      // Header: label on top, smaller target text below.
       const head = el('div', { class: 'macro-tile-head' });
-      head.appendChild(el('div', { class: 'macro-tile-label', style: `--macro-color: ${def.color}` }, [
-        el('span', { class: 'macro-dot' }),
-        def.label,
-      ]));
-      const headRight = el('div', { class: 'macro-tile-pct' }, `target ${target} g`);
-      head.appendChild(headRight);
+      const headLeft = el('div', {}, [
+        el('div', { class: 'macro-tile-label', style: `--macro-color: ${def.color}` }, [
+          el('span', { class: 'macro-dot' }),
+          def.label,
+        ]),
+        el('div', { class: 'macro-tile-target' },
+          target > 0 ? `target ${target} g` : 'no target set'),
+      ]);
+      const remainingEl = el('span', { class: 'macro-remaining-inline' }, '');
+      head.appendChild(headLeft);
+      head.appendChild(remainingEl);
       tile.appendChild(head);
 
+      // Input row — type=text + inputmode=numeric is more reliable on iOS
+      // than type=number which can cause focus jank with the spinner.
       const inputRow = el('div', { class: 'macro-tile-input-row' });
       const input = el('input', {
-        type: 'number', inputmode: 'numeric', min: '0', step: '1',
+        type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
         value: eaten || '',
         placeholder: '0',
-        'aria-label': def.label + ' grams eaten today',
+        autocomplete: 'off',
+        'aria-label': def.label + ' grams eaten',
       });
-      const remainingEl = el('span', { class: 'macro-remaining-inline' }, '');
       inputRow.appendChild(input);
       inputRow.appendChild(el('span', { class: 'macro-tile-unit' }, 'g'));
-      inputRow.appendChild(remainingEl);
       tile.appendChild(inputRow);
 
       const bar = el('div', { class: 'macro-bar' });
@@ -1090,11 +1132,12 @@
       bar.appendChild(fill);
       tile.appendChild(bar);
 
-      // Input only updates state + dependent display elements. Does not
-      // re-render the whole macros page, so focus is preserved on mobile.
+      // Strip non-digits while typing so iOS doesn't get confused.
       input.addEventListener('input', () => {
-        const v = Math.max(0, parseInt(input.value, 10) || 0);
-        DB.setTodayIntake({ [def.key]: v });
+        const cleaned = input.value.replace(/[^0-9]/g, '');
+        if (cleaned !== input.value) input.value = cleaned;
+        const v = Math.max(0, parseInt(cleaned, 10) || 0);
+        DB.setIntake(macrosSelectedDate, { [def.key]: v });
         update();
       });
 
@@ -1106,24 +1149,23 @@
 
     // --- Reset button
     const resetBtn = el('button', { class: 'btn btn-ghost btn-block', style: 'margin-top: 12px;' },
-      'Reset today');
+      isToday ? 'Reset today' : 'Reset this day');
     resetBtn.onclick = () => {
-      if (!confirm("Clear today's intake?")) return;
-      DB.resetTodayIntake();
+      if (!confirm('Clear intake for ' + (isToday ? 'today' : 'this day') + '?')) return;
+      DB.resetIntake(macrosSelectedDate);
       refs.forEach((r) => { r.input.value = ''; });
       update();
-      toast('Today cleared');
+      toast('Day cleared');
     };
     wrap.appendChild(resetBtn);
 
     // Surgical update — no DOM destruction.
     function update() {
-      const cur = DB.getTodayIntake();
+      const cur = DB.getIntake(macrosSelectedDate);
       const eatenCal = caloriesFromMacros(cur);
       calBig.textContent = eatenCal.toLocaleString();
       const calPct = targets.calories > 0 ? Math.min(100, (eatenCal / targets.calories) * 100) : 0;
       calFill.style.width = calPct + '%';
-      // Tint calorie bar green-ish (accent) when on track, redder when over.
       const calOver = targets.calories > 0 && eatenCal > targets.calories;
       calFill.style.background = calOver
         ? 'linear-gradient(90deg, var(--macro-protein), var(--danger))'
@@ -1140,11 +1182,24 @@
         r.fill.style.width = pct + '%';
         r.remainingEl.textContent = r.target > 0
           ? (rem >= 0 ? `${rem} g remaining` : `${Math.abs(rem)} g over`)
-          : 'no target set';
+          : 'log only';
         r.remainingEl.classList.toggle('over', rem < 0);
       });
     }
     update();
+  }
+
+  function dateKey(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function fmtDayFromKey(key) {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+      weekday: 'long', month: 'short', day: 'numeric',
+    });
   }
 
   // ---------- Settings: Nutrition targets card
@@ -1367,7 +1422,12 @@
     });
     cloud.onCloudUpdate((cloudState) => {
       DB.replaceFromCloud(cloudState);
-      rerenderCurrentPage();
+      // Don't blow away an actively-focused input. Most snapshots are our
+      // own writes round-tripping back, so skipping the re-render while
+      // typing is safe — pages have surgical updates for their own state.
+      const ae = document.activeElement;
+      const isTyping = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && !ae.readOnly;
+      if (!isTyping) rerenderCurrentPage();
     });
   }
 
