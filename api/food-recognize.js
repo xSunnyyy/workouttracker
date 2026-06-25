@@ -7,8 +7,15 @@
 
 export const config = { runtime: 'edge' };
 
-const MODEL = 'gemini-1.5-flash-latest';
-const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+// Models to try in order. Google has been retiring the `-latest` aliases
+// and rotating which models are available on v1beta. We try the current
+// stable Flash first, fall back to older variants on 404.
+const MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-001',
+  'gemini-1.5-flash',
+];
 
 const PROMPT = `You are analysing a photo a user took for nutrition tracking.
 
@@ -54,7 +61,6 @@ export default async function handler(req) {
   // Strip data: prefix if present
   const stripped = String(imageBase64).replace(/^data:[^;]+;base64,/, '');
 
-  const upstream = `${ENDPOINT}?key=${encodeURIComponent(apiKey)}`;
   const payload = {
     contents: [{
       parts: [
@@ -68,15 +74,31 @@ export default async function handler(req) {
     },
   };
 
+  let res, lastDetail = '';
+  let modelUsed = '';
   try {
-    const res = await fetch(upstream, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
+    for (const model of MODELS) {
+      const upstream = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      res = await fetch(upstream, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) { modelUsed = model; break; }
       const text = await res.text().catch(() => '');
-      return json({ error: `Gemini ${res.status}`, detail: text.slice(0, 400) }, 502);
+      lastDetail = `${model}: ${res.status} ${text.slice(0, 200)}`;
+      // 404 = model not available for this key → try next.
+      // 401/403 = bad key → no point trying others.
+      if (res.status === 401 || res.status === 403) {
+        return json({ error: `Gemini auth failed (${res.status}). Check GEMINI_API_KEY in Vercel.`, detail: text.slice(0, 200) }, res.status);
+      }
+      if (res.status !== 404) break;
+    }
+    if (!res || !res.ok) {
+      return json({
+        error: 'Gemini request failed',
+        detail: lastDetail || `HTTP ${res?.status || '?'}`,
+      }, 502);
     }
     const data = await res.json();
     const textOut = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -86,6 +108,7 @@ export default async function handler(req) {
       return json({
         error: 'Gemini returned non-JSON',
         raw: textOut.slice(0, 400),
+        modelUsed,
       }, 502);
     }
 
