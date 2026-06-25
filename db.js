@@ -11,8 +11,21 @@ const DB = (() => {
     })),
     workouts: [],
     metrics: { heightCm: null, weightKg: null, goalKg: null, notes: '' },
+    macros: defaultMacros(),
     settings: { theme: 'dark', unit: 'kg' },
   });
+
+  // Default macros: 2000 kcal, balanced split (30/40/30 P/C/F), fiber 14g/1000kcal.
+  function defaultMacros() {
+    return {
+      targetCalories: 2000,
+      preset: 'balanced',
+      proteinG: 150,
+      carbsG: 200,
+      fatG: 67,
+      fiberG: 28,
+    };
+  }
 
   let state = null;
 
@@ -54,6 +67,7 @@ const DB = (() => {
 
     parsed.programs = parsed.programs || [];
     parsed.workouts = parsed.workouts || [];
+    parsed.macros = Object.assign(defaultMacros(), parsed.macros || {});
 
     return parsed;
   }
@@ -264,6 +278,13 @@ const DB = (() => {
     save();
   }
 
+  // ----- Macros
+  function getMacros() { return getState().macros; }
+  function setMacros(m) {
+    Object.assign(getState().macros, m);
+    save();
+  }
+
   // ----- Settings
   function getSettings() { return getState().settings; }
   function setSetting(key, value) {
@@ -309,6 +330,7 @@ const DB = (() => {
     getWorkouts, getWorkout, saveWorkout, deleteWorkout,
     getExerciseHistory,
     getMetrics, setMetrics,
+    getMacros, setMacros,
     getSettings, setSetting,
     totalVolume, workoutsInRange, workoutsThisWeek,
     replaceFromCloud, pushNow,
