@@ -1249,16 +1249,16 @@
     async function runSearch(q) {
       try {
         const res = await fetch(`/api/food-search?q=${encodeURIComponent(q)}`);
+        let body = null;
+        try { body = await res.json(); } catch {}
         if (!res.ok) {
-          let detail = '';
-          try { const j = await res.json(); detail = j.error || JSON.stringify(j); }
-          catch { detail = `HTTP ${res.status}`; }
+          let detail = body?.error || `HTTP ${res.status}`;
           if (res.status === 404) detail = 'Search proxy not deployed yet — run `vercel dev` locally or deploy.';
+          else if (res.status === 503) detail = 'Food database is busy right now. Try again in a few seconds.';
           status.textContent = detail.slice(0, 200);
           return;
         }
-        const { results } = await res.json();
-        renderResults(results || []);
+        renderResults(body?.results || []);
       } catch (e) {
         status.textContent = e?.message || 'Search failed';
       }
