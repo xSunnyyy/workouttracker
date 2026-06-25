@@ -1094,9 +1094,13 @@
 
     const calCard = el('div', { class: 'glass card cal-card' });
 
+    const subText = calOver
+      ? `${Math.abs(calLeft).toLocaleString()} calories over`
+      : `${calLeft.toLocaleString()} calories left`;
     const calLeftCol = el('div', { class: 'cal-left' }, [
-      el('div', { class: 'cal-big' }, Math.abs(calLeft).toLocaleString()),
-      el('div', { class: 'cal-sub' }, calOver ? 'Calories over' : 'Calories left'),
+      el('p', { class: 'cal-eyebrow' }, 'Calories today'),
+      el('div', { class: 'cal-big' }, eatenCal.toLocaleString()),
+      el('div', { class: 'cal-sub' + (calOver ? ' over' : '') }, subText),
     ]);
     const calRing = el('div', { class: 'cal-ring-wrap' });
     calRing.appendChild(ringSvg({
