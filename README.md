@@ -58,19 +58,36 @@ defaults to deny-all in production mode.
 The Macros tab can log food two ways:
 
 - **Search**: type a food name → results come from
-  [Open Food Facts](https://world.openfoodfacts.org/) via
-  `/api/food-search`. No key needed — it's fully open.
+  [USDA FoodData Central](https://fdc.nal.usda.gov/) via
+  `/api/food-search`. Falls back to
+  [Open Food Facts](https://world.openfoodfacts.org/) if USDA is
+  unavailable.
 
 - **Photo**: take a picture of food or a nutrition label → the image
   is sent to Google Gemini Vision via `/api/food-recognize`. Macros
   are parsed and pre-filled in the portion modal.
+
+### Search setup (one-time)
+
+1. Get a free USDA key (instant, no card) at
+   <https://fdc.nal.usda.gov/api-key-signup.html>.
+2. In **Vercel → Settings → Environment Variables**, add
+   `USDA_API_KEY = <your key>` for Production.
+3. Redeploy.
+
+USDA's free tier is 1,000 requests/hour. The search proxy edge-caches
+results so popular queries cost ~zero requests after the first hit.
+
+Without `USDA_API_KEY`, search falls back to Open Food Facts which is
+heavily skewed toward European packaged products — usable but much
+worse for generic foods and meals.
 
 ### Photo setup (one-time)
 
 1. Get a free Gemini key at <https://aistudio.google.com/app/apikey>
    (no credit card; 1500 requests/day on the free tier).
 2. In **Vercel → Settings → Environment Variables**, add
-   `GEMINI_API_KEY = <your key>` for Production (and Preview).
+   `GEMINI_API_KEY = <your key>` for Production.
 3. Redeploy.
 
 If `GEMINI_API_KEY` isn't set, the photo button returns a clear

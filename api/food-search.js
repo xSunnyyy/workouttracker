@@ -1,92 +1,186 @@
-// Vercel Edge function — searches Open Food Facts for a food/product by
-// keyword. Tries the REST v2 endpoint first (faster, more reliable) and
-// falls back to the legacy CGI search if v2 hiccups. No API key needed.
+// Vercel Edge function — searches USDA FoodData Central for foods.
+// USDA's database covers generic ingredients, common dishes (via FNDDS
+// "Survey" foods), and major branded products — much better suited to
+// real meal tracking than Open Food Facts.
+//
+// Setup: get a free API key (instant, no card) at
+// https://fdc.nal.usda.gov/api-key-signup.html and add it in Vercel as
+// USDA_API_KEY.
+//
+// We fall back to Open Food Facts if USDA_API_KEY isn't set or if USDA
+// itself fails, so the app still works (just with weaker results).
 
 export const config = { runtime: 'edge' };
-
-const ENDPOINTS = [
-  'https://world.openfoodfacts.org/api/v2/search',
-  'https://world.openfoodfacts.org/cgi/search.pl',
-];
-
-const FIELDS = [
-  'code', 'product_name', 'brands',
-  'serving_size', 'serving_quantity', 'image_small_url',
-  'nutriments', 'nutrition_data_per',
-].join(',');
 
 export default async function handler(req) {
   const url = new URL(req.url);
   const q = (url.searchParams.get('q') || '').trim();
   if (!q) return json({ results: [] }, 200);
 
+  const usdaKey = process.env.USDA_API_KEY;
   let lastErr = null;
-  for (const endpoint of ENDPOINTS) {
+
+  // 1) USDA FoodData Central (preferred)
+  if (usdaKey) {
     try {
-      const data = await fetchEndpoint(endpoint, q);
-      const results = (data.products || data.hits || [])
-        .map(normalize)
-        .filter((r) => r && r.name && r.calories != null);
-      return new Response(JSON.stringify({ results }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
+      const results = await searchUSDA(q, usdaKey);
+      return jsonCached({ results, source: 'usda' });
     } catch (e) {
       lastErr = e;
-      // Try the next endpoint
     }
   }
+
+  // 2) Open Food Facts (fallback — better than nothing)
+  try {
+    const results = await searchOFF(q);
+    return jsonCached({ results, source: 'openfoodfacts' });
+  } catch (e) {
+    lastErr = e;
+  }
+
   return json({
-    error: 'Food database is currently unavailable (Open Food Facts upstream). Please try again in a moment.',
+    error: usdaKey
+      ? 'Food databases are temporarily unavailable. Try again in a few seconds.'
+      : 'No USDA_API_KEY set on the server and the fallback database is unavailable. Add USDA_API_KEY in Vercel for reliable results.',
     detail: lastErr ? String(lastErr.message || lastErr).slice(0, 200) : '',
   }, 503);
 }
 
-async function fetchEndpoint(endpoint, q) {
-  const url = new URL(endpoint);
-  url.searchParams.set('search_terms', q);
-  url.searchParams.set('page_size', '24');
-  url.searchParams.set('fields', FIELDS);
-  // Legacy CGI endpoint needs these extras
-  if (endpoint.includes('/cgi/')) {
-    url.searchParams.set('search_simple', '1');
-    url.searchParams.set('action', 'process');
-    url.searchParams.set('json', '1');
-  }
+// ----- USDA FoodData Central -----
+const USDA_ENDPOINT = 'https://api.nal.usda.gov/fdc/v1/foods/search';
 
-  // Single retry with short backoff on 5xx — OFF is sometimes briefly busy.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch(url.toString(), {
-      headers: {
-        'User-Agent': 'Lift-WorkoutTracker/1.0 (https://github.com)',
-        'Accept': 'application/json',
-      },
-    });
-    if (res.ok) {
-      const text = await res.text();
-      try { return JSON.parse(text); }
-      catch { throw new Error(`Non-JSON response: ${text.slice(0, 120)}`); }
-    }
-    if (res.status < 500) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-    if (attempt === 0) await new Promise((r) => setTimeout(r, 400));
+async function searchUSDA(q, apiKey) {
+  const url = new URL(USDA_ENDPOINT);
+  url.searchParams.set('api_key', apiKey);
+  url.searchParams.set('query', q);
+  url.searchParams.set('pageSize', '24');
+  // Prioritise the most useful data types: Survey/FNDDS is what people
+  // actually eat ('egg and cheese on biscuit'), Foundation + SR Legacy
+  // are generic ingredients, Branded covers grocery products.
+  url.searchParams.set('dataType', 'Survey (FNDDS),Foundation,SR Legacy,Branded');
+
+  const res = await fetch(url.toString(), {
+    headers: { 'Accept': 'application/json' },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`USDA HTTP ${res.status}: ${text.slice(0, 200)}`);
   }
-  throw new Error('5xx after retry');
+  const data = await res.json();
+  const foods = data.foods || [];
+  return foods.map(normaliseUsda).filter(Boolean);
 }
 
-// Map an Open Food Facts product into our compact shape. Always per-100g.
-function normalize(p) {
+// USDA nutrient lookup by common nutrient numbers + names.
+const NUTR_CAL    = ['Energy', 'Energy (Atwater General Factors)', 'Energy (Atwater Specific Factors)'];
+const NUTR_PROT   = ['Protein'];
+const NUTR_CARBS  = ['Carbohydrate, by difference', 'Carbohydrates'];
+const NUTR_FAT    = ['Total lipid (fat)', 'Total fat (NLEA)'];
+const NUTR_FIBER  = ['Fiber, total dietary'];
+
+function findNutrient(nutrients, names) {
+  // Try by name match (case-insensitive)
+  for (const name of names) {
+    const found = nutrients.find((n) =>
+      (n.nutrientName || '').toLowerCase() === name.toLowerCase());
+    if (found && Number.isFinite(Number(found.value))) {
+      return { value: Number(found.value), unit: found.unitName || '' };
+    }
+  }
+  return null;
+}
+
+function normaliseUsda(food) {
+  const nutrients = food.foodNutrients || [];
+  const calRaw   = findNutrient(nutrients, NUTR_CAL);
+  if (!calRaw) return null;
+  const protRaw  = findNutrient(nutrients, NUTR_PROT);
+  const carbsRaw = findNutrient(nutrients, NUTR_CARBS);
+  const fatRaw   = findNutrient(nutrients, NUTR_FAT);
+  const fiberRaw = findNutrient(nutrients, NUTR_FIBER);
+
+  // For most data types nutrient values are per 100g. For Branded items
+  // they're per labelNutrients serving, but the search endpoint already
+  // returns values normalised per 100g in foodNutrients. Default-safe.
+  const cal   = calRaw.value;
+  const prot  = protRaw  ? protRaw.value  : 0;
+  const carbs = carbsRaw ? carbsRaw.value : 0;
+  const fat   = fatRaw   ? fatRaw.value   : 0;
+  const fiber = fiberRaw ? fiberRaw.value : 0;
+
+  // Calorie unit normalisation: USDA can return kJ instead of kcal in
+  // rare cases — divide by 4.184 if so.
+  const calKcal = (calRaw.unit || '').toUpperCase() === 'KJ' ? cal / 4.184 : cal;
+
+  return {
+    id: 'usda-' + (food.fdcId || food.description),
+    name: food.description || food.lowercaseDescription || 'Unknown',
+    brand: food.brandName || food.brandOwner || '',
+    image: '',
+    servingSizeText: food.servingSize
+      ? `${food.servingSize} ${food.servingSizeUnit || 'g'}` : '',
+    servingSizeG: food.servingSizeUnit && food.servingSizeUnit.toLowerCase().startsWith('g')
+      ? Number(food.servingSize) : null,
+    calories: round(calKcal),
+    proteinG: round(prot),
+    carbsG:   round(carbs),
+    fatG:     round(fat),
+    fiberG:   round(fiber),
+  };
+}
+
+// ----- Open Food Facts fallback -----
+const OFF_ENDPOINTS = [
+  'https://world.openfoodfacts.org/api/v2/search',
+  'https://world.openfoodfacts.org/cgi/search.pl',
+];
+const OFF_FIELDS = [
+  'code', 'product_name', 'brands',
+  'serving_size', 'serving_quantity', 'image_small_url',
+  'nutriments',
+].join(',');
+
+async function searchOFF(q) {
+  let lastErr = null;
+  for (const endpoint of OFF_ENDPOINTS) {
+    try {
+      const url = new URL(endpoint);
+      url.searchParams.set('search_terms', q);
+      url.searchParams.set('page_size', '24');
+      url.searchParams.set('fields', OFF_FIELDS);
+      if (endpoint.includes('/cgi/')) {
+        url.searchParams.set('search_simple', '1');
+        url.searchParams.set('action', 'process');
+        url.searchParams.set('json', '1');
+      }
+      const res = await fetch(url.toString(), {
+        headers: {
+          'User-Agent': 'Lift-WorkoutTracker/1.0 (https://github.com)',
+          'Accept': 'application/json',
+        },
+      });
+      if (!res.ok) {
+        lastErr = new Error(`OFF ${endpoint}: ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      return (data.products || data.hits || [])
+        .map(normaliseOff)
+        .filter(Boolean);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('Open Food Facts unavailable');
+}
+
+function normaliseOff(p) {
   if (!p || !p.product_name) return null;
   const n = p.nutriments || {};
   const cal = pickNum(n['energy-kcal_100g'], n['energy-kcal'], n['energy_100g']);
   if (cal == null) return null;
   return {
-    id: p.code || p.product_name,
+    id: 'off-' + (p.code || p.product_name),
     name: p.product_name,
     brand: p.brands || '',
     image: p.image_small_url || '',
@@ -100,6 +194,7 @@ function normalize(p) {
   };
 }
 
+// ----- Helpers -----
 function pickNum(...vals) {
   for (const v of vals) {
     const n = Number(v);
@@ -108,12 +203,23 @@ function pickNum(...vals) {
   return null;
 }
 function round(v) { return v == null ? 0 : Math.round(v * 10) / 10; }
+
 function json(body, status) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
+    },
+  });
+}
+function jsonCached(body) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, s-maxage=86400, stale-while-revalidate=604800',
     },
   });
 }
