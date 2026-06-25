@@ -116,34 +116,55 @@ function normaliseUsda(food) {
   const fatRaw   = findNutrient(nutrients, NUTR_FAT);
   const fiberRaw = findNutrient(nutrients, NUTR_FIBER);
 
-  // For most data types nutrient values are per 100g. For Branded items
-  // they're per labelNutrients serving, but the search endpoint already
-  // returns values normalised per 100g in foodNutrients. Default-safe.
   const cal   = calRaw.value;
   const prot  = protRaw  ? protRaw.value  : 0;
   const carbs = carbsRaw ? carbsRaw.value : 0;
   const fat   = fatRaw   ? fatRaw.value   : 0;
   const fiber = fiberRaw ? fiberRaw.value : 0;
-
-  // Calorie unit normalisation: USDA can return kJ instead of kcal in
-  // rare cases — divide by 4.184 if so.
   const calKcal = (calRaw.unit || '').toUpperCase() === 'KJ' ? cal / 4.184 : cal;
+
+  // Convert the serving size to grams across the most common USDA units so
+  // foods like '1 burger', '1 cup', '12 oz' all give us a usable per-serving
+  // weight (and therefore a usable 'serving' unit in the portion modal).
+  const servingG = servingToGrams(food.servingSize, food.servingSizeUnit);
 
   return {
     id: 'usda-' + (food.fdcId || food.description),
     name: food.description || food.lowercaseDescription || 'Unknown',
     brand: food.brandName || food.brandOwner || '',
     image: '',
+    // 'household' name like '1 burger', '12 pieces', '1 cup' — what the
+    // label printed for the consumer. Used by the client to label the
+    // default serving unit so people can log 'burgers' not 'grams'.
+    servingDescription: food.householdServingFullText || '',
     servingSizeText: food.servingSize
       ? `${food.servingSize} ${food.servingSizeUnit || 'g'}` : '',
-    servingSizeG: food.servingSizeUnit && food.servingSizeUnit.toLowerCase().startsWith('g')
-      ? Number(food.servingSize) : null,
+    servingSizeG: servingG,
     calories: round(calKcal),
     proteinG: round(prot),
     carbsG:   round(carbs),
     fatG:     round(fat),
     fiberG:   round(fiber),
   };
+}
+
+// USDA gives serving sizes in many units. Convert to grams (approximate).
+function servingToGrams(size, unit) {
+  const n = Number(size);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const u = String(unit || '').trim().toLowerCase();
+  if (!u || u === 'g' || u === 'gram' || u === 'grams') return n;
+  if (u === 'mg') return n / 1000;
+  if (u === 'kg') return n * 1000;
+  if (u === 'ml' || u === 'milliliter' || u === 'millilitre') return n; // ~1 g for water
+  if (u === 'l' || u === 'liter' || u === 'litre') return n * 1000;
+  if (u === 'oz') return n * 28.3495;
+  if (u === 'fl oz' || u === 'floz') return n * 29.5735;
+  if (u === 'cup' || u === 'cups') return n * 240;
+  if (u === 'tbsp' || u === 'tablespoon' || u === 'tablespoons') return n * 15;
+  if (u === 'tsp' || u === 'teaspoon' || u === 'teaspoons') return n * 5;
+  // Unknown unit — return null so we at least know the serving exists.
+  return null;
 }
 
 // ----- Open Food Facts fallback -----
@@ -201,6 +222,7 @@ function normaliseOff(p) {
     name: p.product_name,
     brand: p.brands || '',
     image: p.image_small_url || '',
+    servingDescription: p.serving_size || '',
     servingSizeText: p.serving_size || '',
     servingSizeG: parseFloat(p.serving_quantity) || null,
     calories: round(cal),
