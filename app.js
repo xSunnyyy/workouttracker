@@ -1015,10 +1015,29 @@
     return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
   }
 
-  // ---------- Macros tab — daily intake tracker with a 7-day picker
-  // Page is built once per day-selection; inputs surgically update the
-  // dependent text + bar widths so typing on mobile doesn't lose focus.
+  // ---------- Macros tab — daily intake tracker
+  // Visual layout inspired by Cal AI: day-circle picker, big calorie ring,
+  // 2x2 macro grid with mini rings. Tap any card to edit that macro for
+  // the selected day.
   let macrosSelectedDate = null;
+
+  // SVG progress ring helper.
+  function ringSvg({ size, radius, thickness, progress, color, dashed = false }) {
+    const c = 2 * Math.PI * radius;
+    const off = c - Math.min(1.5, Math.max(0, progress)) * c;
+    const wrap = document.createElement('div');
+    wrap.className = 'ring-wrap';
+    wrap.innerHTML = `<svg viewBox="0 0 ${size} ${size}" class="progress-ring" width="${size}" height="${size}">
+      <circle cx="${size/2}" cy="${size/2}" r="${radius}"
+              class="ring-bg${dashed ? ' dashed' : ''}"
+              style="stroke-width:${thickness}"/>
+      <circle cx="${size/2}" cy="${size/2}" r="${radius}"
+              class="ring-fill"
+              style="stroke-width:${thickness};stroke:${color};stroke-dasharray:${c};stroke-dashoffset:${off}"/>
+    </svg>`;
+    return wrap.firstElementChild;
+  }
+
   function renderMacros() {
     const wrap = $('#macros-content');
     if (!wrap) return;
@@ -1028,164 +1047,158 @@
     const todayK = DB.getTodayKey();
     if (!macrosSelectedDate) macrosSelectedDate = todayK;
 
-    // --- 7-day chip row: oldest on the left, today on the right (so the
-    // most-recent day sits next to the scroll-end / thumb position).
-    const dateChips = el('div', { class: 'chips chips-scroll', style: 'margin-bottom: 14px;' });
+    // ---- Day picker: 7 day-of-week circles with progress rings ----
+    const dayRow = el('div', { class: 'day-picker' });
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = dateKey(d);
-      const label = i === 0
-        ? 'Today'
-        : d.toLocaleDateString(undefined, { weekday: 'short' }) +
-          ' ' + d.getDate();
+      const dayLabel = d.toLocaleDateString(undefined, { weekday: 'short' });
+      const dayNum = d.getDate();
+      const isSelected = macrosSelectedDate === key;
+      const isToday = key === todayK;
+      const isFuture = key > todayK;
+
+      // Per-day calorie ratio (consumed/target) drives the ring colour.
+      const dayIntake = DB.getIntake(key);
+      const dayCal = caloriesFromMacros(dayIntake);
+      const ratio = targets.calories > 0 ? dayCal / targets.calories : 0;
+      const ringColor = ratio > 1.05 ? 'var(--danger)' : 'var(--accent)';
+
       const chip = el('button', {
-        class: 'chip' + (macrosSelectedDate === key ? ' active' : ''),
-        onclick: () => {
-          macrosSelectedDate = key;
-          renderMacros();
-        },
-      }, label);
-      dateChips.appendChild(chip);
+        class: 'day-chip' + (isSelected ? ' active' : '') + (isFuture ? ' future' : ''),
+        onclick: () => { macrosSelectedDate = key; renderMacros(); },
+        'aria-label': fmtDayFromKey(key),
+      });
+      chip.appendChild(el('span', { class: 'day-chip-label' }, dayLabel));
+
+      const circle = el('div', { class: 'day-chip-circle' + (isToday ? ' today' : '') });
+      circle.appendChild(ringSvg({
+        size: 40, radius: 18, thickness: 2.5,
+        progress: ratio, color: ringColor,
+        dashed: !isToday && !isSelected,
+      }));
+      circle.appendChild(el('span', { class: 'day-chip-date' }, String(dayNum)));
+      chip.appendChild(circle);
+      dayRow.appendChild(chip);
     }
-    wrap.appendChild(dateChips);
-    // Snap scroll position to the right so Today is in view on first paint.
-    requestAnimationFrame(() => {
-      dateChips.scrollLeft = dateChips.scrollWidth;
-    });
+    wrap.appendChild(dayRow);
 
+    // ---- Big calorie card ----
     const intake = DB.getIntake(macrosSelectedDate);
-    const isToday = macrosSelectedDate === todayK;
+    const eatenCal = caloriesFromMacros(intake);
+    const calLeft = (targets.calories || 0) - eatenCal;
+    const calRatio = targets.calories > 0 ? eatenCal / targets.calories : 0;
+    const calOver = calLeft < 0;
+    const calColor = calOver ? 'var(--danger)' : 'var(--accent)';
 
-    // --- Calorie summary
-    const calCard = el('div', { class: 'glass card macro-cal-card' });
-    const labelText = isToday
-      ? `Today · ${fmtDay()}`
-      : fmtDayFromKey(macrosSelectedDate);
-    calCard.appendChild(el('p', { class: 'eyebrow' }, labelText));
+    const calCard = el('div', { class: 'glass card cal-card' });
 
-    const calRow = el('div', { class: 'macro-cal-row' });
-    const calBig = el('span', { class: 'macro-cal-big' }, '0');
-    const calSep = el('span', { class: 'macro-cal-sep' }, ` / ${targets.calories.toLocaleString()}`);
-    const calUnit = el('span', { class: 'macro-cal-unit' }, 'kcal');
-    calRow.appendChild(calBig);
-    calRow.appendChild(calSep);
-    calRow.appendChild(calUnit);
-    calCard.appendChild(calRow);
-
-    const calBar = el('div', { class: 'macro-bar macro-bar-lg' });
-    const calFill = el('div', { class: 'macro-bar-fill' });
-    calBar.appendChild(calFill);
-    calCard.appendChild(calBar);
-
-    const calRemaining = el('p', { class: 'row-sub macro-remaining' }, '');
-    calCard.appendChild(calRemaining);
+    const calLeftCol = el('div', { class: 'cal-left' }, [
+      el('div', { class: 'cal-big' }, Math.abs(calLeft).toLocaleString()),
+      el('div', { class: 'cal-sub' }, calOver ? 'Calories over' : 'Calories left'),
+    ]);
+    const calRing = el('div', { class: 'cal-ring-wrap' });
+    calRing.appendChild(ringSvg({
+      size: 100, radius: 44, thickness: 8,
+      progress: calRatio, color: calColor,
+    }));
+    const calIcon = el('span', { class: 'cal-ring-icon' });
+    calIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67z"/></svg>';
+    calRing.appendChild(calIcon);
+    calCard.appendChild(calLeftCol);
+    calCard.appendChild(calRing);
     wrap.appendChild(calCard);
 
-    // --- Per-macro tiles
-    const macrosCard = el('div', { class: 'glass card' });
-    macrosCard.appendChild(el('h3', { class: 'card-title' }, 'Intake'));
-    macrosCard.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 14px;' },
-      isToday ? 'Enter the grams you\'ve eaten today.' : 'Editing past day — changes are saved against the selected date.'));
-
-    const refs = [];
+    // ---- 2x2 macro grid ----
+    const grid = el('div', { class: 'macro-grid' });
+    const MACRO_ICONS = {
+      proteinG: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6a4 4 0 0 0-4 4c0 1.86 1.27 3.4 3 3.86V18a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2v-4.14c1.73-.46 3-2 3-3.86a4 4 0 0 0-4-4zm-7 6c-2.21 0-4 1.34-4 3 0 .68.3 1.31.81 1.81L4 18.62V21h3.5l2.81-2.81C10.81 18.7 11.34 19 12 19l-.59-.59c.5-.5.81-1.13.81-1.81 0-1.66-1.79-3-4-3z"/></svg>',
+      carbsG:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9.24 2 7 4.24 7 7v3c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5V7c0-2.76-2.24-5-5-5zm-1 5a1 1 0 0 1 2 0v3h-2V7zm-4 8a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3 3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3z"/></svg>',
+      fatG:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a6 6 0 0 0-6 6c0 4.5 6 14 6 14s6-9.5 6-14a6 6 0 0 0-6-6zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>',
+      fiberG:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2v10l4 4-4 4-4-4 4-4V2zm-7 7l3 3-3 3 3 3M19 9l-3 3 3 3-3 3"/></svg>',
+    };
 
     MACRO_DEFS.forEach((def) => {
       const target = Math.max(0, Number(targets[def.key]) || 0);
       const eaten = Math.max(0, Number(intake[def.key]) || 0);
+      const left = target - eaten;
+      const overLeft = left < 0;
+      const ratio = target > 0 ? eaten / target : 0;
+      const color = overLeft ? 'var(--danger)' : def.color;
 
-      const tile = el('div', { class: 'macro-tile' });
+      const card = el('div', { class: 'glass card macro-mini-card' });
+      card.appendChild(el('div', { class: 'macro-mini-big' }, `${Math.abs(left)}g`));
+      card.appendChild(el('div', { class: 'macro-mini-sub' },
+        target > 0 ? (overLeft ? `${def.label} over` : `${def.label} left`) : def.label));
+      const ringWrap = el('div', { class: 'macro-mini-ring' });
+      ringWrap.appendChild(ringSvg({
+        size: 60, radius: 26, thickness: 4.5,
+        progress: ratio, color,
+      }));
+      const iconSpan = el('span', { class: 'macro-mini-icon', style: `color:${def.color}` });
+      iconSpan.innerHTML = MACRO_ICONS[def.key] || '';
+      ringWrap.appendChild(iconSpan);
+      card.appendChild(ringWrap);
 
-      // Header: macro label on top, smaller target text below.
-      const head = el('div', { class: 'macro-tile-head' });
-      const headLeft = el('div', {}, [
-        el('div', { class: 'macro-tile-label', style: `--macro-color: ${def.color}` }, [
-          el('span', { class: 'macro-dot' }),
-          def.label,
-        ]),
-        el('div', { class: 'macro-tile-target' },
-          target > 0 ? `target ${target} g` : 'no target set'),
-      ]);
-      head.appendChild(headLeft);
-      tile.appendChild(head);
-
-      // Input row — type=text + inputmode=numeric is more reliable on iOS
-      // than type=number which can cause focus jank with the spinner.
-      // Remaining text sits inline on the right of the input.
-      const inputRow = el('div', { class: 'macro-tile-input-row' });
-      const input = el('input', {
-        type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
-        value: eaten || '',
-        placeholder: '0',
-        autocomplete: 'off',
-        'aria-label': def.label + ' grams eaten',
-      });
-      const remainingEl = el('span', { class: 'macro-remaining-inline' }, '');
-      inputRow.appendChild(input);
-      inputRow.appendChild(el('span', { class: 'macro-tile-unit' }, 'g'));
-      inputRow.appendChild(remainingEl);
-      tile.appendChild(inputRow);
-
-      const bar = el('div', { class: 'macro-bar' });
-      const fill = el('div', { class: 'macro-bar-fill', style: `background:${def.color}` });
-      bar.appendChild(fill);
-      tile.appendChild(bar);
-
-      // Strip non-digits while typing so iOS doesn't get confused.
-      input.addEventListener('input', () => {
-        const cleaned = input.value.replace(/[^0-9]/g, '');
-        if (cleaned !== input.value) input.value = cleaned;
-        const v = Math.max(0, parseInt(cleaned, 10) || 0);
-        DB.setIntake(macrosSelectedDate, { [def.key]: v });
-        update();
-      });
-
-      refs.push({ def, target, input, fill, remainingEl });
-      macrosCard.appendChild(tile);
+      card.onclick = () => openMacroEditor(def);
+      grid.appendChild(card);
     });
+    wrap.appendChild(grid);
 
-    wrap.appendChild(macrosCard);
-
-    // --- Reset button
-    const resetBtn = el('button', { class: 'btn btn-ghost btn-block', style: 'margin-top: 12px;' },
-      isToday ? 'Reset today' : 'Reset this day');
+    // ---- Reset button ----
+    const isTodaySelected = macrosSelectedDate === todayK;
+    const resetBtn = el('button', {
+      class: 'btn btn-ghost btn-block',
+      style: 'margin-top: 16px;',
+    }, isTodaySelected ? 'Reset today' : 'Reset this day');
     resetBtn.onclick = () => {
-      if (!confirm('Clear intake for ' + (isToday ? 'today' : 'this day') + '?')) return;
+      if (!confirm('Clear intake for ' + (isTodaySelected ? 'today' : 'this day') + '?')) return;
       DB.resetIntake(macrosSelectedDate);
-      refs.forEach((r) => { r.input.value = ''; });
-      update();
+      renderMacros();
       toast('Day cleared');
     };
     wrap.appendChild(resetBtn);
+  }
 
-    // Surgical update — no DOM destruction.
-    function update() {
-      const cur = DB.getIntake(macrosSelectedDate);
-      const eatenCal = caloriesFromMacros(cur);
-      calBig.textContent = eatenCal.toLocaleString();
-      const calPct = targets.calories > 0 ? Math.min(100, (eatenCal / targets.calories) * 100) : 0;
-      calFill.style.width = calPct + '%';
-      const calOver = targets.calories > 0 && eatenCal > targets.calories;
-      calFill.style.background = calOver
-        ? 'linear-gradient(90deg, var(--macro-protein), var(--danger))'
-        : 'linear-gradient(90deg, var(--accent), var(--accent-2))';
-      const remCal = (targets.calories || 0) - eatenCal;
-      calRemaining.textContent = remCal >= 0
-        ? `${remCal.toLocaleString()} kcal remaining`
-        : `${Math.abs(remCal).toLocaleString()} kcal over target`;
+  // Tap-to-edit modal — one numeric input + Save. Keeps the visual layer
+  // clean and avoids the focus-jank problems of inline keyboard editing.
+  function openMacroEditor(def) {
+    const intake = DB.getIntake(macrosSelectedDate);
+    const targets = DB.getMacroTargets();
+    const cur = Math.max(0, Number(intake[def.key]) || 0);
+    const target = Math.max(0, Number(targets[def.key]) || 0);
 
-      refs.forEach((r) => {
-        const eaten = Math.max(0, Number(cur[r.def.key]) || 0);
-        const rem = r.target - eaten;
-        const pct = r.target > 0 ? Math.min(100, (eaten / r.target) * 100) : 0;
-        r.fill.style.width = pct + '%';
-        r.remainingEl.textContent = r.target > 0
-          ? (rem >= 0 ? `${rem} g remaining` : `${Math.abs(rem)} g over`)
-          : 'log only';
-        r.remainingEl.classList.toggle('over', rem < 0);
-      });
-    }
-    update();
+    const input = el('input', {
+      type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
+      value: cur || '',
+      placeholder: '0',
+      autocomplete: 'off',
+      class: 'macro-editor-input',
+    });
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/[^0-9]/g, '');
+    });
+
+    const body = el('div', {}, [
+      el('p', { class: 'row-sub', style: 'margin-bottom: 14px;' },
+        target > 0 ? `Target ${target} g · ${fmtDayFromKey(macrosSelectedDate)}` : fmtDayFromKey(macrosSelectedDate)),
+      el('label', { class: 'field' }, [
+        el('span', {}, `${def.label} (g)`),
+        input,
+      ]),
+    ]);
+
+    const save = el('button', { class: 'btn btn-primary btn-block' }, 'Save');
+    save.onclick = () => {
+      const v = Math.max(0, parseInt(input.value, 10) || 0);
+      DB.setIntake(macrosSelectedDate, { [def.key]: v });
+      closeModal();
+      renderMacros();
+    };
+
+    openModal({ title: `Log ${def.label}`, body, footer: [save] });
+    setTimeout(() => { input.focus(); input.select(); }, 80);
   }
 
   function dateKey(d) {
