@@ -1238,24 +1238,30 @@
     setTimeout(() => search.focus(), 80);
 
     let searchTimer = null;
+    let inflight = 0;
     search.addEventListener('input', () => {
       clearTimeout(searchTimer);
       const q = search.value.trim();
       if (!q) { list.innerHTML = ''; status.textContent = ''; return; }
+      if (q.length < 2) { status.textContent = 'Keep typing…'; return; }
       status.textContent = 'Searching…';
-      searchTimer = setTimeout(() => runSearch(q), 350);
+      const myReq = ++inflight;
+      searchTimer = setTimeout(() => {
+        // Ignore stale responses if the user kept typing.
+        runSearch(q, () => myReq === inflight);
+      }, 220);
     });
 
-    async function runSearch(q) {
+    async function runSearch(q, isStillCurrent) {
       try {
         const res = await fetch(`/api/food-search?q=${encodeURIComponent(q)}`);
+        if (isStillCurrent && !isStillCurrent()) return;
         let body = null;
         try { body = await res.json(); } catch {}
         if (!res.ok) {
           let msg = body?.error || `HTTP ${res.status}`;
           if (res.status === 404) msg = 'Search proxy not deployed yet — run `vercel dev` locally or deploy.';
           else if (res.status === 503) msg = 'Food database is busy right now. Try again in a few seconds.';
-          // Include upstream detail (e.g. USDA's own error message) for debugging.
           if (body?.detail) msg += `\nUpstream: ${body.detail}`;
           status.textContent = msg.slice(0, 400);
           return;
