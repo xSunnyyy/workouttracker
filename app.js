@@ -1254,7 +1254,9 @@
 
     async function runSearch(q, isStillCurrent) {
       try {
-        const res = await fetch(`/api/food-search?q=${encodeURIComponent(q)}`);
+        // v param bumps when the response shape changes so old edge-cached
+        // entries (without serving fields) get bypassed on first request.
+        const res = await fetch(`/api/food-search?q=${encodeURIComponent(q)}&v=3`);
         if (isStillCurrent && !isStillCurrent()) return;
         let body = null;
         try { body = await res.json(); } catch {}
@@ -1369,21 +1371,27 @@
   // Food always carries per-100g macros; the unit selector converts whatever
   // the user typed into grams via UNIT_TO_G, then we scale + log.
   function openPortionModal(food) {
-    // Build available units. Servings only show if the food has a known
-    // serving size in grams. Container only shows if a container weight is
-    // known (AI photos). Standard units always available.
+    // Build available units. Always include a serving option — when the
+    // food has a known gram weight we label it with the natural name
+    // ('burger (1 burger ≈ 155 g)'); when it doesn't we fall back to a
+    // 100g default so the user can still log '1 serving' without doing
+    // mental math.
     const units = [];
-    if (food.servingSizeG && food.servingSizeG > 0) {
-      const naturalLabel = naturalServingLabel(food.servingDescription);
-      const detail = food.servingDescription
-        ? `${food.servingDescription.trim()} ≈ ${roundDisp(food.servingSizeG)} g`
-        : `${roundDisp(food.servingSizeG)} g`;
-      units.push({
-        key: 'serving',
-        label: `${naturalLabel} (${detail})`,
-        toG: food.servingSizeG,
-      });
+    const knownServingG = Number(food.servingSizeG) > 0 ? Number(food.servingSizeG) : null;
+    const sg = knownServingG || 100;
+    const naturalLabel = naturalServingLabel(food.servingDescription);
+    let serveLabel;
+    if (food.servingDescription && knownServingG) {
+      serveLabel = `${naturalLabel} (${food.servingDescription.trim()} ≈ ${roundDisp(sg)} g)`;
+    } else if (food.servingDescription) {
+      serveLabel = `${naturalLabel} (${food.servingDescription.trim()} ≈ ${roundDisp(sg)} g est.)`;
+    } else if (knownServingG) {
+      serveLabel = `serving (${roundDisp(sg)} g)`;
+    } else {
+      serveLabel = `serving (${roundDisp(sg)} g est.)`;
     }
+    units.push({ key: 'serving', label: serveLabel, toG: sg });
+
     if (food.containerGrams && food.containerGrams > 0) {
       units.push({
         key: 'container',
@@ -1397,13 +1405,9 @@
     units.push({ key: 'cup', label: 'cup',               toG: 240 });
     units.push({ key: 'ml',  label: 'milliliter (ml)',   toG: 1 });
 
-    // Default unit: serving (or container) if known, else gram.
-    // Default count: 1 for serving/container, else the serving size in grams.
-    let defaultUnitKey = units[0].key;
+    // Always default to 'serving' with count 1.
+    let defaultUnitKey = 'serving';
     let defaultCount = 1;
-    if (defaultUnitKey === 'g') {
-      defaultCount = Math.round(food.servingSizeG || 100);
-    }
 
     const countInput = el('input', {
       type: 'text', inputmode: 'decimal', pattern: '[0-9]*[.,]?[0-9]*',
