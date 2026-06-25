@@ -317,16 +317,16 @@ const DB = (() => {
     Object.assign(getState().macros.targets, fields);
     save();
   }
-  function getTodayIntake() {
-    const key = todayKey();
+  function getIntake(dateKey) {
+    const key = dateKey || todayKey();
     const intake = getState().macros.intake;
     return Object.assign(
       { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
       intake[key] || {},
     );
   }
-  function setTodayIntake(fields) {
-    const key = todayKey();
+  function setIntake(dateKey, fields) {
+    const key = dateKey || todayKey();
     const intake = getState().macros.intake;
     intake[key] = Object.assign(
       { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
@@ -335,11 +335,12 @@ const DB = (() => {
     );
     save();
   }
-  function resetTodayIntake() {
-    const key = todayKey();
+  function resetIntake(dateKey) {
+    const key = dateKey || todayKey();
     delete getState().macros.intake[key];
     save();
   }
+  function getTodayKey() { return todayKey(); }
 
   // ----- Settings
   function getSettings() { return getState().settings; }
@@ -386,7 +387,7 @@ const DB = (() => {
     getWorkouts, getWorkout, saveWorkout, deleteWorkout,
     getExerciseHistory,
     getMetrics, setMetrics,
-    getMacroTargets, setMacroTargets, getTodayIntake, setTodayIntake, resetTodayIntake,
+    getMacroTargets, setMacroTargets, getIntake, setIntake, resetIntake, getTodayKey,
     getSettings, setSetting,
     totalVolume, workoutsInRange, workoutsThisWeek,
     replaceFromCloud, pushNow,
