@@ -1255,9 +1255,16 @@
           let detail = body?.error || `HTTP ${res.status}`;
           if (res.status === 404) detail = 'Search proxy not deployed yet — run `vercel dev` locally or deploy.';
           else if (res.status === 503) detail = 'Food database is busy right now. Try again in a few seconds.';
-          status.textContent = detail.slice(0, 200);
+          status.textContent = detail.slice(0, 240);
           return;
         }
+        const src = body?.source;
+        const note = body?.note || '';
+        let banner = '';
+        if (src === 'usda')          banner = 'Results from USDA FoodData Central';
+        else if (src === 'openfoodfacts') banner = note || 'Results from Open Food Facts';
+        status.textContent = banner;
+        status.classList.toggle('food-source-warn', src === 'openfoodfacts');
         renderResults(body?.results || []);
       } catch (e) {
         status.textContent = e?.message || 'Search failed';

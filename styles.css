@@ -1403,6 +1403,11 @@ a { color: inherit; text-decoration: none; }
   margin-top: 2px;
 }
 
+.food-source-warn {
+  color: var(--danger) !important;
+  font-weight: 600;
+}
+
 /* Food search */
 .food-photo-row {
   display: grid;
