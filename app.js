@@ -1362,14 +1362,17 @@
   // the user typed into grams via UNIT_TO_G, then we scale + log.
   function openPortionModal(food) {
     // Build available units. Servings only show if the food has a known
-    // serving size; Container only shows if the food/AI gave a container
-    // weight; fl oz / ml only show prominently for liquids but stay
-    // available for everything.
+    // serving size in grams. Container only shows if a container weight is
+    // known (AI photos). Standard units always available.
     const units = [];
     if (food.servingSizeG && food.servingSizeG > 0) {
+      const naturalLabel = naturalServingLabel(food.servingDescription);
+      const detail = food.servingDescription
+        ? `${food.servingDescription.trim()} ≈ ${roundDisp(food.servingSizeG)} g`
+        : `${roundDisp(food.servingSizeG)} g`;
       units.push({
         key: 'serving',
-        label: `serving (${roundDisp(food.servingSizeG)} g)`,
+        label: `${naturalLabel} (${detail})`,
         toG: food.servingSizeG,
       });
     }
@@ -1386,8 +1389,8 @@
     units.push({ key: 'cup', label: 'cup',               toG: 240 });
     units.push({ key: 'ml',  label: 'milliliter (ml)',   toG: 1 });
 
-    // Default unit: serving if known, else gram. Default count: 1 for
-    // serving/container, else the food's serving size in grams.
+    // Default unit: serving (or container) if known, else gram.
+    // Default count: 1 for serving/container, else the serving size in grams.
     let defaultUnitKey = units[0].key;
     let defaultCount = 1;
     if (defaultUnitKey === 'g') {
@@ -1487,6 +1490,20 @@
     if (n >= 100) return String(Math.round(n));
     if (n >= 10)  return String(Math.round(n * 10) / 10);
     return String(Math.round(n * 100) / 100);
+  }
+
+  // Turn USDA's householdServingFullText like '1 burger' or '12 pieces'
+  // into a singular-ish unit name we can stick into the unit dropdown.
+  // '1 burger' → 'burger'; '12 pieces' → 'serving' (keep generic since
+  // the count would otherwise be confusing).
+  function naturalServingLabel(text) {
+    if (!text) return 'serving';
+    const m = text.trim().match(/^1\s+([a-z][a-z\s]*?)(\s*\(.*\))?$/i);
+    if (m) {
+      const noun = m[1].trim().toLowerCase();
+      if (noun && noun.length <= 24) return noun;
+    }
+    return 'serving';
   }
 
   // Tap-to-edit modal — one numeric input + Save. Keeps the visual layer
