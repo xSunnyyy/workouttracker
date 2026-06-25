@@ -321,7 +321,7 @@ const DB = (() => {
     const key = dateKey || todayKey();
     const intake = getState().macros.intake;
     return Object.assign(
-      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
+      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0, entries: [] },
       intake[key] || {},
     );
   }
@@ -329,7 +329,7 @@ const DB = (() => {
     const key = dateKey || todayKey();
     const intake = getState().macros.intake;
     intake[key] = Object.assign(
-      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0 },
+      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0, entries: [] },
       intake[key] || {},
       fields,
     );
@@ -339,6 +339,48 @@ const DB = (() => {
     const key = dateKey || todayKey();
     delete getState().macros.intake[key];
     save();
+  }
+  // Add a logged food entry and bump the aggregate macros for that day.
+  function addIntakeEntry(dateKey, entry) {
+    const key = dateKey || todayKey();
+    const cur = getIntake(key);
+    const entries = [...(cur.entries || [])];
+    const newEntry = {
+      id: uid('food'),
+      addedAt: Date.now(),
+      name: entry.name || 'Food',
+      brand: entry.brand || '',
+      grams: Number(entry.grams) || 0,
+      calories: Number(entry.calories) || 0,
+      proteinG: Number(entry.proteinG) || 0,
+      carbsG:   Number(entry.carbsG)   || 0,
+      fatG:     Number(entry.fatG)     || 0,
+      fiberG:   Number(entry.fiberG)   || 0,
+      source: entry.source || 'manual',
+    };
+    entries.push(newEntry);
+    setIntake(key, {
+      proteinG: (cur.proteinG || 0) + newEntry.proteinG,
+      carbsG:   (cur.carbsG   || 0) + newEntry.carbsG,
+      fatG:     (cur.fatG     || 0) + newEntry.fatG,
+      fiberG:   (cur.fiberG   || 0) + newEntry.fiberG,
+      entries,
+    });
+    return newEntry;
+  }
+  function removeIntakeEntry(dateKey, entryId) {
+    const key = dateKey || todayKey();
+    const cur = getIntake(key);
+    const entries = cur.entries || [];
+    const target = entries.find((e) => e.id === entryId);
+    if (!target) return;
+    setIntake(key, {
+      proteinG: Math.max(0, (cur.proteinG || 0) - (target.proteinG || 0)),
+      carbsG:   Math.max(0, (cur.carbsG   || 0) - (target.carbsG   || 0)),
+      fatG:     Math.max(0, (cur.fatG     || 0) - (target.fatG     || 0)),
+      fiberG:   Math.max(0, (cur.fiberG   || 0) - (target.fiberG   || 0)),
+      entries: entries.filter((e) => e.id !== entryId),
+    });
   }
   function getTodayKey() { return todayKey(); }
 
@@ -387,7 +429,8 @@ const DB = (() => {
     getWorkouts, getWorkout, saveWorkout, deleteWorkout,
     getExerciseHistory,
     getMetrics, setMetrics,
-    getMacroTargets, setMacroTargets, getIntake, setIntake, resetIntake, getTodayKey,
+    getMacroTargets, setMacroTargets, getIntake, setIntake, resetIntake,
+    addIntakeEntry, removeIntakeEntry, getTodayKey,
     getSettings, setSetting,
     totalVolume, workoutsInRange, workoutsThisWeek,
     replaceFromCloud, pushNow,

@@ -1150,6 +1150,42 @@
     });
     wrap.appendChild(grid);
 
+    // ---- Add food button (search or camera) ----
+    const addBtn = el('button', { class: 'btn btn-primary btn-block add-food-btn', style: 'margin-top: 16px;' });
+    addBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M12 5v14M5 12h14"/></svg> Add food';
+    addBtn.onclick = () => openAddFoodModal();
+    wrap.appendChild(addBtn);
+
+    // ---- Food log ----
+    if ((intake.entries || []).length) {
+      const logCard = el('div', { class: 'glass card', style: 'margin-top: 14px;' });
+      logCard.appendChild(el('h3', { class: 'card-title' }, 'Logged food'));
+      const list = el('div', { class: 'food-log-list' });
+      [...intake.entries].reverse().forEach((entry) => {
+        const row = el('div', { class: 'food-log-row' });
+        const left = el('div', { class: 'food-log-info' }, [
+          el('div', { class: 'food-log-name' }, entry.name + (entry.brand ? ` · ${entry.brand}` : '')),
+          el('div', { class: 'food-log-meta' },
+            `${entry.grams}g · ${entry.calories} kcal · P${entry.proteinG} C${entry.carbsG} F${entry.fatG}`),
+        ]);
+        const removeBtn = el('button', {
+          class: 'mini-btn',
+          'aria-label': 'Remove entry',
+          onclick: (e) => {
+            e.stopPropagation();
+            DB.removeIntakeEntry(macrosSelectedDate, entry.id);
+            renderMacros();
+          },
+          html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+        });
+        row.appendChild(left);
+        row.appendChild(removeBtn);
+        list.appendChild(row);
+      });
+      logCard.appendChild(list);
+      wrap.appendChild(logCard);
+    }
+
     // ---- Reset button ----
     const isTodaySelected = macrosSelectedDate === todayK;
     const resetBtn = el('button', {
@@ -1163,6 +1199,210 @@
       toast('Day cleared');
     };
     wrap.appendChild(resetBtn);
+  }
+
+  // ---------- Add Food: search + camera flows
+  function openAddFoodModal() {
+    const search = el('input', {
+      type: 'text', placeholder: 'Search foods…',
+      autocomplete: 'off',
+    });
+    const searchIcon = el('span');
+    searchIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>';
+    const bar = el('div', { class: 'search-bar glass', style: 'margin-bottom: 12px;' }, [
+      searchIcon.firstChild,
+      search,
+    ]);
+
+    // Camera + upload buttons
+    const camBtn = el('button', { class: 'btn btn-secondary food-photo-btn' });
+    camBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Take photo';
+
+    const upBtn = el('button', { class: 'btn btn-secondary food-photo-btn' });
+    upBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg> Upload image';
+
+    const camInput = el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
+    const upInput  = el('input', { type: 'file', accept: 'image/*', style: 'display:none' });
+    camBtn.onclick = () => camInput.click();
+    upBtn.onclick = () => upInput.click();
+    camInput.onchange = (e) => handlePhoto(e.target.files?.[0]);
+    upInput.onchange = (e) => handlePhoto(e.target.files?.[0]);
+
+    const photoRow = el('div', { class: 'food-photo-row' }, [camBtn, upBtn, camInput, upInput]);
+
+    const status = el('p', { class: 'row-sub', style: 'text-align:center; padding: 12px; min-height: 38px;' }, '');
+    const list = el('div', { class: 'food-search-list' });
+
+    const body = el('div', {}, [bar, photoRow, status, list]);
+    openModal({ title: 'Add food', body, fullHeight: true });
+    setTimeout(() => search.focus(), 80);
+
+    let searchTimer = null;
+    search.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      const q = search.value.trim();
+      if (!q) { list.innerHTML = ''; status.textContent = ''; return; }
+      status.textContent = 'Searching…';
+      searchTimer = setTimeout(() => runSearch(q), 350);
+    });
+
+    async function runSearch(q) {
+      try {
+        const res = await fetch(`/api/food-search?q=${encodeURIComponent(q)}`);
+        if (!res.ok) {
+          let detail = '';
+          try { const j = await res.json(); detail = j.error || JSON.stringify(j); }
+          catch { detail = `HTTP ${res.status}`; }
+          if (res.status === 404) detail = 'Search proxy not deployed yet — run `vercel dev` locally or deploy.';
+          status.textContent = detail.slice(0, 200);
+          return;
+        }
+        const { results } = await res.json();
+        renderResults(results || []);
+      } catch (e) {
+        status.textContent = e?.message || 'Search failed';
+      }
+    }
+
+    function renderResults(results) {
+      list.innerHTML = '';
+      status.textContent = results.length ? '' : 'No matches';
+      results.forEach((r) => {
+        const item = el('div', { class: 'food-search-item', onclick: () => openPortionModal(r) });
+        if (r.image) {
+          item.appendChild(el('img', { src: r.image, class: 'food-search-img', loading: 'lazy', alt: '' }));
+        } else {
+          item.appendChild(el('div', { class: 'food-search-img placeholder' }));
+        }
+        item.appendChild(el('div', { class: 'food-search-info' }, [
+          el('div', { class: 'food-search-name' }, r.name),
+          el('div', { class: 'food-search-meta' },
+            `${r.brand ? r.brand + ' · ' : ''}${r.calories} kcal / 100g · P${r.proteinG} C${r.carbsG} F${r.fatG}`),
+        ]));
+        list.appendChild(item);
+      });
+    }
+
+    async function handlePhoto(file) {
+      if (!file) return;
+      status.textContent = 'Analysing image…';
+      list.innerHTML = '';
+      try {
+        const dataUrl = await readAsDataURL(file);
+        const res = await fetch('/api/food-recognize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageBase64: dataUrl,
+            mimeType: file.type || 'image/jpeg',
+          }),
+        });
+        if (!res.ok) {
+          let detail = '';
+          try { const j = await res.json(); detail = j.error || JSON.stringify(j); }
+          catch { detail = `HTTP ${res.status}`; }
+          if (res.status === 404) detail = 'Recognize proxy not deployed.';
+          status.textContent = detail.slice(0, 250);
+          return;
+        }
+        const { result } = await res.json();
+        if (!result) { status.textContent = 'No result'; return; }
+        // Treat the AI output as a 1-portion "food" the user can confirm.
+        openPortionModal({
+          id: 'ai-' + Date.now(),
+          name: result.name,
+          brand: '',
+          image: '',
+          calories: result.servingGrams ? (result.calories * 100) / result.servingGrams : result.calories,
+          proteinG: result.servingGrams ? (result.proteinG * 100) / result.servingGrams : result.proteinG,
+          carbsG:   result.servingGrams ? (result.carbsG   * 100) / result.servingGrams : result.carbsG,
+          fatG:     result.servingGrams ? (result.fatG     * 100) / result.servingGrams : result.fatG,
+          fiberG:   result.servingGrams ? (result.fiberG   * 100) / result.servingGrams : result.fiberG,
+          servingSizeG: result.servingGrams,
+          source: 'ai',
+          aiConfidence: result.confidence,
+        });
+      } catch (e) {
+        console.error(e);
+        status.textContent = e?.message || 'Image upload failed';
+      }
+    }
+  }
+
+  function readAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(fr.error);
+      fr.readAsDataURL(file);
+    });
+  }
+
+  // Portion confirmation. Food carries per-100g macros (or per-serving for
+  // AI results). User picks grams; we scale and log.
+  function openPortionModal(food) {
+    const defaultGrams = Math.round(food.servingSizeG || 100);
+
+    const gramsInput = el('input', {
+      type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
+      value: defaultGrams, autocomplete: 'off',
+      class: 'macro-editor-input',
+    });
+    gramsInput.addEventListener('input', () => {
+      gramsInput.value = gramsInput.value.replace(/[^0-9]/g, '');
+      updatePreview();
+    });
+
+    const preview = el('div', { class: 'portion-preview' });
+    function updatePreview() {
+      const g = Math.max(0, parseInt(gramsInput.value, 10) || 0);
+      const scale = g / 100;
+      const cal = Math.round(food.calories * scale);
+      const p = Math.round(food.proteinG * scale);
+      const c = Math.round(food.carbsG * scale);
+      const f = Math.round(food.fatG * scale);
+      const fb = Math.round(food.fiberG * scale);
+      preview.innerHTML = '';
+      preview.appendChild(el('div', { class: 'portion-cal' }, `${cal} kcal`));
+      preview.appendChild(el('div', { class: 'portion-macros' },
+        `P ${p}g · C ${c}g · F ${f}g · Fib ${fb}g`));
+    }
+    updatePreview();
+
+    const body = el('div', {}, [
+      el('p', { class: 'row-sub portion-name' },
+        food.name + (food.brand ? ` · ${food.brand}` : '') +
+        (food.aiConfidence ? ` · ${food.aiConfidence} confidence` : '')),
+      el('label', { class: 'field' }, [
+        el('span', {}, 'Amount eaten (g)'),
+        gramsInput,
+      ]),
+      preview,
+    ]);
+
+    const save = el('button', { class: 'btn btn-primary btn-block' }, 'Log this food');
+    save.onclick = () => {
+      const g = Math.max(0, parseInt(gramsInput.value, 10) || 0);
+      if (g <= 0) return;
+      const scale = g / 100;
+      DB.addIntakeEntry(macrosSelectedDate, {
+        name: food.name,
+        brand: food.brand || '',
+        grams: g,
+        calories: Math.round(food.calories * scale),
+        proteinG: Math.round(food.proteinG * scale),
+        carbsG:   Math.round(food.carbsG   * scale),
+        fatG:     Math.round(food.fatG     * scale),
+        fiberG:   Math.round(food.fiberG   * scale),
+        source: food.source || 'search',
+      });
+      closeModal();
+      renderMacros();
+      toast(`Logged ${food.name}`);
+    };
+
+    openModal({ title: 'Log food', body, footer: [save] });
+    setTimeout(() => gramsInput.focus(), 80);
   }
 
   // Tap-to-edit modal — one numeric input + Save. Keeps the visual layer

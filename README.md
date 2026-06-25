@@ -53,6 +53,29 @@ After registering a Firebase project (config goes in `firebase.js`):
 Without step 3 the app shows a *Permission denied* banner — Firestore
 defaults to deny-all in production mode.
 
+## Macros tab — food search & camera
+
+The Macros tab can log food two ways:
+
+- **Search**: type a food name → results come from
+  [Open Food Facts](https://world.openfoodfacts.org/) via
+  `/api/food-search`. No key needed — it's fully open.
+
+- **Photo**: take a picture of food or a nutrition label → the image
+  is sent to Google Gemini Vision via `/api/food-recognize`. Macros
+  are parsed and pre-filled in the portion modal.
+
+### Photo setup (one-time)
+
+1. Get a free Gemini key at <https://aistudio.google.com/app/apikey>
+   (no credit card; 1500 requests/day on the free tier).
+2. In **Vercel → Settings → Environment Variables**, add
+   `GEMINI_API_KEY = <your key>` for Production (and Preview).
+3. Redeploy.
+
+If `GEMINI_API_KEY` isn't set, the photo button returns a clear
+error and the text search still works.
+
 ## File map
 
 | File | Purpose |
