@@ -1252,10 +1252,12 @@
         let body = null;
         try { body = await res.json(); } catch {}
         if (!res.ok) {
-          let detail = body?.error || `HTTP ${res.status}`;
-          if (res.status === 404) detail = 'Search proxy not deployed yet — run `vercel dev` locally or deploy.';
-          else if (res.status === 503) detail = 'Food database is busy right now. Try again in a few seconds.';
-          status.textContent = detail.slice(0, 240);
+          let msg = body?.error || `HTTP ${res.status}`;
+          if (res.status === 404) msg = 'Search proxy not deployed yet — run `vercel dev` locally or deploy.';
+          else if (res.status === 503) msg = 'Food database is busy right now. Try again in a few seconds.';
+          // Include upstream detail (e.g. USDA's own error message) for debugging.
+          if (body?.detail) msg += `\nUpstream: ${body.detail}`;
+          status.textContent = msg.slice(0, 400);
           return;
         }
         const src = body?.source;
