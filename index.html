@@ -154,66 +154,71 @@
         </div>
       </header>
 
-      <div class="glass card" id="install-card"></div>
-      <div class="glass card" id="sync-card"></div>
-
-      <div class="glass card">
-        <h3 class="card-title">Appearance</h3>
-        <div class="row">
-          <div>
-            <p class="row-title">Theme</p>
-            <p class="row-sub">Light or dark mode</p>
+      <!-- Body metrics (with unit toggle) -->
+      <details class="glass card collapsible-card" data-persist="metrics" open>
+        <summary>
+          <h3 class="card-title">Body metrics</h3>
+          <span class="card-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </summary>
+        <div class="card-body">
+          <div class="row" style="padding-top: 0;">
+            <div>
+              <p class="row-title">Weight unit</p>
+              <p class="row-sub">Used across the app</p>
+            </div>
+            <div class="seg" id="unit-seg">
+              <button data-unit="kg" class="active">kg</button>
+              <button data-unit="lb">lb</button>
+            </div>
           </div>
-          <div class="seg" id="theme-seg">
-            <button data-theme="light">Light</button>
-            <button data-theme="dark" class="active">Dark</button>
+          <div id="metrics-fields"></div>
+          <button class="btn btn-primary" id="save-metrics">Save metrics</button>
+        </div>
+      </details>
+
+      <!-- Nutrition targets -->
+      <details class="glass card collapsible-card" data-persist="nutrition" open>
+        <summary>
+          <h3 class="card-title">Nutrition targets</h3>
+          <span class="card-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </summary>
+        <div class="card-body" id="nutrition-card"></div>
+      </details>
+
+      <!-- Install app -->
+      <details class="glass card collapsible-card" data-persist="install">
+        <summary>
+          <h3 class="card-title">Install app</h3>
+          <span class="card-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </summary>
+        <div class="card-body" id="install-card"></div>
+      </details>
+
+      <!-- Data -->
+      <details class="glass card collapsible-card" data-persist="data">
+        <summary>
+          <h3 class="card-title">Data</h3>
+          <span class="card-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </summary>
+        <div class="card-body">
+          <div class="row">
+            <div>
+              <p class="row-title">Reset all data</p>
+              <p class="row-sub">Removes programs, workouts and metrics</p>
+            </div>
+            <button class="btn btn-danger" id="reset-data">Reset</button>
           </div>
         </div>
-        <div class="row">
-          <div>
-            <p class="row-title">Weight unit</p>
-            <p class="row-sub">Used across the app</p>
-          </div>
-          <div class="seg" id="unit-seg">
-            <button data-unit="kg" class="active">kg</button>
-            <button data-unit="lb">lb</button>
-          </div>
-        </div>
-      </div>
+      </details>
 
-      <div class="glass card">
-        <h3 class="card-title">Body metrics</h3>
-        <div id="metrics-fields"></div>
-        <button class="btn btn-primary" id="save-metrics">Save metrics</button>
-      </div>
-
-      <div class="glass card" id="nutrition-card"></div>
-
-      <div class="glass card">
-        <h3 class="card-title">Activity</h3>
-        <p class="row-sub" style="margin-bottom: 14px;">Last 16 weeks of training</p>
-        <div class="dotchart" id="dotchart"></div>
-        <div class="dotchart-legend">
-          <span>Less</span>
-          <span class="dot l0"></span>
-          <span class="dot l1"></span>
-          <span class="dot l2"></span>
-          <span class="dot l3"></span>
-          <span class="dot l4"></span>
-          <span>More</span>
-        </div>
-      </div>
-
-      <div class="glass card">
-        <h3 class="card-title">Data</h3>
-        <div class="row">
-          <div>
-            <p class="row-title">Reset all data</p>
-            <p class="row-sub">Removes programs, workouts and metrics</p>
-          </div>
-          <button class="btn btn-danger" id="reset-data">Reset</button>
-        </div>
-      </div>
+      <!-- Cloud sync -->
+      <details class="glass card collapsible-card" data-persist="sync">
+        <summary>
+          <h3 class="card-title">Cloud sync</h3>
+          <span class="card-chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </summary>
+        <div class="card-body" id="sync-card"></div>
+      </details>
 
       <p class="footer-mark">Lift · v1.0</p>
       <div class="bottom-spacer"></div>
