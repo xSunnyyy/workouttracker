@@ -1,6 +1,21 @@
 // =========================================
 // Lift · main application
 // =========================================
+
+// Capture the PWA install prompt as soon as the browser fires it (Chrome /
+// Edge / Android only). Stored on window so the Settings card can use it
+// whenever the user opens that page.
+window.__deferredInstall = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  window.__deferredInstall = e;
+  if (typeof window.__onInstallStateChange === 'function') window.__onInstallStateChange();
+});
+window.addEventListener('appinstalled', () => {
+  window.__deferredInstall = null;
+  if (typeof window.__onInstallStateChange === 'function') window.__onInstallStateChange();
+});
+
 (() => {
   DB.load();
 
@@ -1710,10 +1725,77 @@
   }
 
   function renderSettings() {
+    renderInstallCard();
     renderSyncCard();
     renderMetricsFields();
     renderNutritionCard();
     renderDotChart();
+  }
+
+  // Re-render when install eligibility changes (event fires async).
+  window.__onInstallStateChange = () => {
+    if (currentPage === 'settings') renderInstallCard();
+  };
+
+  // ---------- Install card (PWA)
+  function renderInstallCard() {
+    const card = $('#install-card');
+    if (!card) return;
+    card.innerHTML = '';
+    card.appendChild(el('h3', { class: 'card-title' }, 'Install app'));
+
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const promptEvent = window.__deferredInstall;
+
+    if (isStandalone) {
+      card.appendChild(el('p', { class: 'row-sub auth-status', style: 'margin: 0;' },
+        '✓ Installed — running as an app'));
+      return;
+    }
+
+    if (promptEvent) {
+      // Chrome / Edge / Android — native install prompt available.
+      card.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 12px;' },
+        'Install Lift to your home screen for faster access and offline use.'));
+      const btn = el('button', { class: 'btn btn-primary btn-block' });
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Install Lift';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          promptEvent.prompt();
+          const choice = await promptEvent.userChoice;
+          if (choice.outcome === 'accepted') toast('Installing…');
+          else toast('Install cancelled');
+        } catch (e) {
+          console.warn('Install prompt failed:', e);
+          toast('Install failed');
+        }
+        window.__deferredInstall = null;
+        renderInstallCard();
+      };
+      card.appendChild(btn);
+      return;
+    }
+
+    if (isIOS) {
+      // iOS Safari has no programmatic install. Show inline instructions.
+      card.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 10px;' },
+        'iPhone / iPad install:'));
+      const steps = el('ol', { class: 'install-steps' }, [
+        el('li', {}, 'Tap the Share button in Safari (square with up arrow)'),
+        el('li', {}, 'Scroll down and tap "Add to Home Screen"'),
+        el('li', {}, 'Tap "Add" in the top-right corner'),
+      ]);
+      card.appendChild(steps);
+      return;
+    }
+
+    // Desktop browser without install support, or criteria not yet met.
+    card.appendChild(el('p', { class: 'row-sub', style: 'margin: 0;' },
+      'Open Lift in Chrome or Edge to install as an app. If you\'re already in Chrome and don\'t see the install button, the browser may need a moment — try reloading.'));
   }
 
   // ---------- Sync card (sign in with Google)
