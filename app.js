@@ -992,6 +992,7 @@
     { key: 'carbsG',   label: 'Carbs',   kcalPerG: 4, color: 'var(--macro-carbs)' },
     { key: 'fatG',     label: 'Fat',     kcalPerG: 9, color: 'var(--macro-fat)' },
     { key: 'fiberG',   label: 'Fiber',   kcalPerG: 0, color: 'var(--macro-fiber)' },
+    { key: 'sugarG',   label: 'Sugar',   kcalPerG: 0, color: 'var(--macro-sugar)', isLimit: true },
   ];
 
   function computeFromPreset(cal, presetKey) {
@@ -1002,6 +1003,9 @@
       carbsG:   Math.round((cal * p.pct.carbs   / 100) / 4),
       fatG:     Math.round((cal * p.pct.fat     / 100) / 9),
       fiberG:   Math.round((cal * 14) / 1000),
+      // Sugar is a limit, not a percentage of calories. Keep WHO's 50g
+      // recommended max (matches the default) regardless of preset.
+      sugarG:   50,
     };
   }
 
@@ -1121,6 +1125,7 @@
       carbsG:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C9.24 2 7 4.24 7 7v3c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5V7c0-2.76-2.24-5-5-5zm-1 5a1 1 0 0 1 2 0v3h-2V7zm-4 8a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3 3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3z"/></svg>',
       fatG:     '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a6 6 0 0 0-6 6c0 4.5 6 14 6 14s6-9.5 6-14a6 6 0 0 0-6-6zm0 8a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>',
       fiberG:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2v10l4 4-4 4-4-4 4-4V2zm-7 7l3 3-3 3 3 3M19 9l-3 3 3 3-3 3"/></svg>',
+      sugarG:   '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4h10l-1 4H8L7 4zm0 6h10l2 10H5L7 10zm5 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></svg>',
     };
 
     MACRO_DEFS.forEach((def) => {
@@ -1344,6 +1349,7 @@
           carbsG:   (num('carbsG',   'carbs')   * 100) / s,
           fatG:     (num('fatG',     'fat')     * 100) / s,
           fiberG:   (num('fiberG',   'fiber')   * 100) / s,
+          sugarG:   (num('sugarG',   'sugar')   * 100) / s,
           servingSizeG: Number(result.servingGrams) || null,
           containerGrams: Number(result.containerGrams) || 0,
           containerDescription: result.containerDescription || '',
@@ -1449,13 +1455,14 @@
       const c = Math.round(food.carbsG * scale);
       const f = Math.round(food.fatG * scale);
       const fb = Math.round(food.fiberG * scale);
+      const sg = Math.round((food.sugarG || 0) * scale);
 
       conversionEl.textContent = `= ${roundDisp(g)} g · ${roundDisp(g / 28.3495)} oz`;
 
       preview.innerHTML = '';
       preview.appendChild(el('div', { class: 'portion-cal' }, `${cal} kcal`));
       preview.appendChild(el('div', { class: 'portion-macros' },
-        `P ${p}g · C ${c}g · F ${f}g · Fib ${fb}g`));
+        `P ${p}g · C ${c}g · F ${f}g · Fib ${fb}g · Sug ${sg}g`));
     }
     updatePreview();
 
@@ -1486,6 +1493,7 @@
         carbsG:   Math.round(food.carbsG   * scale),
         fatG:     Math.round(food.fatG     * scale),
         fiberG:   Math.round(food.fiberG   * scale),
+        sugarG:   Math.round((food.sugarG || 0) * scale),
         source: food.source || 'search',
       });
       closeModal();
@@ -1518,44 +1526,85 @@
     return 'serving';
   }
 
-  // Tap-to-edit modal — one numeric input + Save. Keeps the visual layer
-  // clean and avoids the focus-jank problems of inline keyboard editing.
+  // Quick-add / set-total modal. Default mode is 'add' so typing 20 and
+  // hitting Save increments today's total by 20g. Toggle to 'set' to
+  // override the total directly (e.g. when correcting an over-count).
   function openMacroEditor(def) {
     const intake = DB.getIntake(macrosSelectedDate);
     const targets = DB.getMacroTargets();
-    const cur = Math.max(0, Number(intake[def.key]) || 0);
+    let cur = Math.max(0, Number(intake[def.key]) || 0);
     const target = Math.max(0, Number(targets[def.key]) || 0);
+
+    let mode = 'add'; // 'add' | 'set'
+
+    // Header showing the live current value
+    const currentEl = el('div', { class: 'macro-editor-current' });
+    function refreshCurrent() {
+      currentEl.innerHTML = '';
+      currentEl.appendChild(el('div', { class: 'macro-editor-current-big' },
+        `${cur} g`));
+      currentEl.appendChild(el('div', { class: 'macro-editor-current-sub' },
+        target > 0
+          ? `of ${target} g target · ${fmtDayFromKey(macrosSelectedDate)}`
+          : fmtDayFromKey(macrosSelectedDate)));
+    }
+    refreshCurrent();
+
+    // Mode toggle
+    const addBtn = el('button', { type: 'button', class: 'active', onclick: () => switchMode('add') }, '+ Add');
+    const setBtn = el('button', { type: 'button', onclick: () => switchMode('set') }, 'Set total');
+    const seg = el('div', { class: 'seg macro-editor-seg' }, [addBtn, setBtn]);
 
     const input = el('input', {
       type: 'text', inputmode: 'numeric', pattern: '[0-9]*',
-      value: cur || '',
-      placeholder: '0',
-      autocomplete: 'off',
+      placeholder: '0', autocomplete: 'off',
       class: 'macro-editor-input',
     });
     input.addEventListener('input', () => {
       input.value = input.value.replace(/[^0-9]/g, '');
+      refreshPreview();
     });
 
+    const preview = el('p', { class: 'macro-editor-preview' });
+    function refreshPreview() {
+      const v = Math.max(0, parseInt(input.value, 10) || 0);
+      if (mode === 'add') {
+        preview.textContent = v > 0 ? `New total: ${cur + v} g` : '';
+      } else {
+        preview.textContent = v !== cur ? `Was ${cur} g → now ${v} g` : '';
+      }
+    }
+
+    function switchMode(m) {
+      mode = m;
+      addBtn.classList.toggle('active', m === 'add');
+      setBtn.classList.toggle('active', m === 'set');
+      input.value = m === 'set' ? String(cur) : '';
+      setTimeout(() => { input.focus(); input.select(); }, 10);
+      refreshPreview();
+    }
+
     const body = el('div', {}, [
-      el('p', { class: 'row-sub', style: 'margin-bottom: 14px;' },
-        target > 0 ? `Target ${target} g · ${fmtDayFromKey(macrosSelectedDate)}` : fmtDayFromKey(macrosSelectedDate)),
+      currentEl,
+      seg,
       el('label', { class: 'field' }, [
-        el('span', {}, `${def.label} (g)`),
+        el('span', {}, mode === 'add' ? `Amount to add (g)` : `New total (g)`),
         input,
       ]),
+      preview,
     ]);
 
     const save = el('button', { class: 'btn btn-primary btn-block' }, 'Save');
     save.onclick = () => {
       const v = Math.max(0, parseInt(input.value, 10) || 0);
-      DB.setIntake(macrosSelectedDate, { [def.key]: v });
+      const newTotal = mode === 'add' ? cur + v : v;
+      DB.setIntake(macrosSelectedDate, { [def.key]: newTotal });
       closeModal();
       renderMacros();
     };
 
     openModal({ title: `Log ${def.label}`, body, footer: [save] });
-    setTimeout(() => { input.focus(); input.select(); }, 80);
+    setTimeout(() => { input.focus(); }, 80);
   }
 
   function dateKey(d) {

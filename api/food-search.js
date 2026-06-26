@@ -95,6 +95,7 @@ const NUTR_PROT   = ['Protein'];
 const NUTR_CARBS  = ['Carbohydrate, by difference', 'Carbohydrates'];
 const NUTR_FAT    = ['Total lipid (fat)', 'Total fat (NLEA)'];
 const NUTR_FIBER  = ['Fiber, total dietary'];
+const NUTR_SUGAR  = ['Sugars, total including NLEA', 'Sugars, Total', 'Sugars, total', 'Total Sugars'];
 
 function findNutrient(nutrients, names) {
   // Try by name match (case-insensitive)
@@ -116,12 +117,14 @@ function normaliseUsda(food) {
   const carbsRaw = findNutrient(nutrients, NUTR_CARBS);
   const fatRaw   = findNutrient(nutrients, NUTR_FAT);
   const fiberRaw = findNutrient(nutrients, NUTR_FIBER);
+  const sugarRaw = findNutrient(nutrients, NUTR_SUGAR);
 
   const cal   = calRaw.value;
   const prot  = protRaw  ? protRaw.value  : 0;
   const carbs = carbsRaw ? carbsRaw.value : 0;
   const fat   = fatRaw   ? fatRaw.value   : 0;
   const fiber = fiberRaw ? fiberRaw.value : 0;
+  const sugar = sugarRaw ? sugarRaw.value : 0;
   const calKcal = (calRaw.unit || '').toUpperCase() === 'KJ' ? cal / 4.184 : cal;
 
   // Convert the serving size to grams across the most common USDA units so
@@ -149,6 +152,7 @@ function normaliseUsda(food) {
     carbsG:   round(carbs),
     fatG:     round(fat),
     fiberG:   round(fiber),
+    sugarG:   round(sugar),
   };
 }
 
@@ -268,6 +272,7 @@ function normaliseOff(p) {
     carbsG:   round(pickNum(n['carbohydrates_100g'])),
     fatG:     round(pickNum(n['fat_100g'])),
     fiberG:   round(pickNum(n['fiber_100g'])),
+    sugarG:   round(pickNum(n['sugars_100g'])),
   };
 }
 
