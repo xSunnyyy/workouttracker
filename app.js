@@ -1642,7 +1642,6 @@ window.addEventListener('appinstalled', () => {
     card.innerHTML = '';
     const targets = DB.getMacroTargets();
 
-    card.appendChild(el('h3', { class: 'card-title' }, 'Nutrition targets'));
     card.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 14px;' },
       'Daily calorie and macro goals. Pick a preset to auto-fill the grams.'));
 
@@ -1729,7 +1728,25 @@ window.addEventListener('appinstalled', () => {
     renderSyncCard();
     renderMetricsFields();
     renderNutritionCard();
-    renderDotChart();
+    setupCollapsibleCards();
+  }
+
+  // Persist details-element open/closed state across reloads via the existing
+  // local-only uiState. Idempotent — safe to call on every renderSettings.
+  function setupCollapsibleCards() {
+    uiState.settingsCollapsed = uiState.settingsCollapsed || {};
+    $$('.collapsible-card').forEach((d) => {
+      const id = d.dataset.persist;
+      if (!id || d.dataset.bound) return;
+      const saved = uiState.settingsCollapsed[id];
+      if (saved === true) d.removeAttribute('open');
+      else if (saved === false) d.setAttribute('open', '');
+      d.addEventListener('toggle', () => {
+        uiState.settingsCollapsed[id] = !d.open;
+        saveUI();
+      });
+      d.dataset.bound = '1';
+    });
   }
 
   // Re-render when install eligibility changes (event fires async).
@@ -1742,7 +1759,6 @@ window.addEventListener('appinstalled', () => {
     const card = $('#install-card');
     if (!card) return;
     card.innerHTML = '';
-    card.appendChild(el('h3', { class: 'card-title' }, 'Install app'));
 
     const isStandalone =
       window.matchMedia('(display-mode: standalone)').matches ||
@@ -1807,7 +1823,6 @@ window.addEventListener('appinstalled', () => {
     card.innerHTML = '';
     const cloud = window.CloudSync;
     if (!cloud) {
-      card.appendChild(el('h3', { class: 'card-title' }, 'Sync'));
       card.appendChild(el('p', { class: 'row-sub' }, 'Cloud sync is loading…'));
       return;
     }
@@ -1827,7 +1842,6 @@ window.addEventListener('appinstalled', () => {
         try { await cloud.signOut(); lastSyncError = null; toast('Signed out'); }
         catch (e) { toast('Sign out failed'); }
       };
-      card.appendChild(el('h3', { class: 'card-title' }, 'Cloud sync'));
       card.appendChild(head);
       if (lastSyncError) {
         const code = lastSyncError.code || '';
@@ -1861,7 +1875,6 @@ window.addEventListener('appinstalled', () => {
       }
       card.appendChild(signOutBtn);
     } else {
-      card.appendChild(el('h3', { class: 'card-title' }, 'Sync across devices'));
       card.appendChild(el('p', { class: 'row-sub' }, 'Sign in to keep your workouts in sync between your phone and desktop. Works offline too.'));
       const btn = el('button', { class: 'btn btn-google btn-block' });
       btn.innerHTML = '<span class="g-logo" aria-hidden="true">' +
