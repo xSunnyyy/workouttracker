@@ -5,20 +5,33 @@
       <stop offset="100%" stop-color="#1a1c26"/>
     </linearGradient>
     <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#b4ff39"/>
-      <stop offset="100%" stop-color="#7af5ff"/>
+      <stop offset="0%" stop-color="#ff6b4a"/>
+      <stop offset="100%" stop-color="#ff9d6e"/>
     </linearGradient>
   </defs>
   <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <!-- Dumbbell glyph -->
-  <g transform="translate(256 256)" stroke="url(#accent)" stroke-linecap="round" fill="none">
-    <!-- Bar -->
+
+  <!-- Fork on top -->
+  <g transform="translate(256 165)" stroke="url(#accent)" stroke-linecap="round" fill="none">
+    <!-- 3 prongs -->
+    <line x1="-46" y1="-70" x2="-46" y2="-10" stroke-width="22"/>
+    <line x1="0"   y1="-70" x2="0"   y2="-10" stroke-width="22"/>
+    <line x1="46"  y1="-70" x2="46"  y2="-10" stroke-width="22"/>
+    <!-- crossbar holding prongs -->
+    <line x1="-58" y1="-10" x2="58" y2="-10" stroke-width="26"/>
+    <!-- handle -->
+    <line x1="0" y1="-10" x2="0" y2="80" stroke-width="32"/>
+  </g>
+
+  <!-- Dumbbell below -->
+  <g transform="translate(256 345)" stroke="url(#accent)" stroke-linecap="round" fill="none">
+    <!-- bar -->
     <line x1="-120" y1="0" x2="120" y2="0" stroke-width="36"/>
-    <!-- Left plates -->
-    <line x1="-150" y1="-70" x2="-150" y2="70" stroke-width="62"/>
-    <line x1="-190" y1="-44" x2="-190" y2="44" stroke-width="50"/>
-    <!-- Right plates -->
-    <line x1="150" y1="-70" x2="150" y2="70" stroke-width="62"/>
-    <line x1="190" y1="-44" x2="190" y2="44" stroke-width="50"/>
+    <!-- left plates -->
+    <line x1="-150" y1="-68" x2="-150" y2="68" stroke-width="62"/>
+    <line x1="-188" y1="-44" x2="-188" y2="44" stroke-width="48"/>
+    <!-- right plates -->
+    <line x1="150" y1="-68" x2="150" y2="68" stroke-width="62"/>
+    <line x1="188" y1="-44" x2="188" y2="44" stroke-width="48"/>
   </g>
 </svg>

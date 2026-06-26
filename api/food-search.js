@@ -235,7 +235,7 @@ async function searchOFF(q) {
       }
       const res = await fetch(url.toString(), {
         headers: {
-          'User-Agent': 'Lift-WorkoutTracker/1.0 (https://github.com)',
+          'User-Agent': 'MacNLift/1.0 (https://github.com)',
           'Accept': 'application/json',
         },
       });

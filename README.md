@@ -1,7 +1,9 @@
-# Lift — Workout Tracker
+# MacNLift — Macros & Workouts
 
-A mobile-first, installable workout tracker PWA. Vanilla HTML/CSS/JS — no build step,
-no backend. Data is stored locally in `localStorage`.
+A mobile-first, installable PWA that tracks both your training and your
+nutrition in one place. Vanilla HTML/CSS/JS — no build step, no backend
+required for the core app. Data is stored locally in `localStorage` and
+optionally synced to Firestore.
 
 ## Features
 
