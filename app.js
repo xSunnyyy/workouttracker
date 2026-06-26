@@ -1,5 +1,5 @@
 // =========================================
-// Lift · main application
+// MacNLift · main application
 // =========================================
 
 // Capture the PWA install prompt as soon as the browser fires it (Chrome /
@@ -1775,9 +1775,9 @@ window.addEventListener('appinstalled', () => {
     if (promptEvent) {
       // Chrome / Edge / Android — native install prompt available.
       card.appendChild(el('p', { class: 'row-sub', style: 'margin-bottom: 12px;' },
-        'Install Lift to your home screen for faster access and offline use.'));
+        'Install MacNLift to your home screen for faster access and offline use.'));
       const btn = el('button', { class: 'btn btn-primary btn-block' });
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Install Lift';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Install MacNLift';
       btn.onclick = async () => {
         btn.disabled = true;
         try {
@@ -1811,7 +1811,7 @@ window.addEventListener('appinstalled', () => {
 
     // Desktop browser without install support, or criteria not yet met.
     card.appendChild(el('p', { class: 'row-sub', style: 'margin: 0;' },
-      'Open Lift in Chrome or Edge to install as an app. If you\'re already in Chrome and don\'t see the install button, the browser may need a moment — try reloading.'));
+      'Open MacNLift in Chrome or Edge to install as an app. If you\'re already in Chrome and don\'t see the install button, the browser may need a moment — try reloading.'));
   }
 
   // ---------- Sync card (sign in with Google)

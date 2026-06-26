@@ -1,7 +1,7 @@
 {
-  "name": "Lift — Workout Tracker",
-  "short_name": "Lift",
-  "description": "A premium, minimalist workout tracker. Plan programs, log workouts, watch the volume climb.",
+  "name": "MacNLift — Macros & Workouts",
+  "short_name": "MacNLift",
+  "description": "Track your macros and your lifts in one premium, minimalist app. Plan programs, log workouts, log food.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
