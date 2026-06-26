@@ -16,8 +16,7 @@ const DB = (() => {
   });
 
   // Default macros: 2000 kcal target with a balanced (30/40/30) split,
-  // fiber at 14g per 1000 kcal. Daily intake is stored per-date so the
-  // Macros tab can track how far through the day's targets you are.
+  // fiber at 14g per 1000 kcal, sugar limit at 50g (WHO recommended max).
   function defaultMacros() {
     return {
       targets: {
@@ -27,6 +26,7 @@ const DB = (() => {
         carbsG: 200,
         fatG: 67,
         fiberG: 28,
+        sugarG: 50,
       },
       intake: {},
     };
@@ -48,6 +48,7 @@ const DB = (() => {
     out.targets.carbsG    = raw.carbsG         ?? out.targets.carbsG;
     out.targets.fatG      = raw.fatG           ?? out.targets.fatG;
     out.targets.fiberG    = raw.fiberG         ?? out.targets.fiberG;
+    out.targets.sugarG    = raw.sugarG         ?? out.targets.sugarG;
     return out;
   }
 
@@ -321,7 +322,7 @@ const DB = (() => {
     const key = dateKey || todayKey();
     const intake = getState().macros.intake;
     return Object.assign(
-      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0, entries: [] },
+      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0, sugarG: 0, entries: [] },
       intake[key] || {},
     );
   }
@@ -329,7 +330,7 @@ const DB = (() => {
     const key = dateKey || todayKey();
     const intake = getState().macros.intake;
     intake[key] = Object.assign(
-      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0, entries: [] },
+      { proteinG: 0, carbsG: 0, fatG: 0, fiberG: 0, sugarG: 0, entries: [] },
       intake[key] || {},
       fields,
     );
@@ -356,6 +357,7 @@ const DB = (() => {
       carbsG:   Number(entry.carbsG)   || 0,
       fatG:     Number(entry.fatG)     || 0,
       fiberG:   Number(entry.fiberG)   || 0,
+      sugarG:   Number(entry.sugarG)   || 0,
       source: entry.source || 'manual',
     };
     entries.push(newEntry);
@@ -364,6 +366,7 @@ const DB = (() => {
       carbsG:   (cur.carbsG   || 0) + newEntry.carbsG,
       fatG:     (cur.fatG     || 0) + newEntry.fatG,
       fiberG:   (cur.fiberG   || 0) + newEntry.fiberG,
+      sugarG:   (cur.sugarG   || 0) + newEntry.sugarG,
       entries,
     });
     return newEntry;
@@ -379,6 +382,7 @@ const DB = (() => {
       carbsG:   Math.max(0, (cur.carbsG   || 0) - (target.carbsG   || 0)),
       fatG:     Math.max(0, (cur.fatG     || 0) - (target.fatG     || 0)),
       fiberG:   Math.max(0, (cur.fiberG   || 0) - (target.fiberG   || 0)),
+      sugarG:   Math.max(0, (cur.sugarG   || 0) - (target.sugarG   || 0)),
       entries: entries.filter((e) => e.id !== entryId),
     });
   }

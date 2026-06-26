@@ -40,6 +40,7 @@ Respond with ONLY valid JSON in this exact shape (no markdown, no commentary):
   "carbs": 0,
   "fat": 0,
   "fiber": 0,
+  "sugar": 0,
   "confidence": "high"
 }
 
@@ -134,6 +135,7 @@ export default async function handler(req) {
       carbsG:   numOr(parsed.carbs   ?? parsed.carbsG,   0),
       fatG:     numOr(parsed.fat     ?? parsed.fatG,     0),
       fiberG:   numOr(parsed.fiber   ?? parsed.fiberG,   0),
+      sugarG:   numOr(parsed.sugar   ?? parsed.sugarG,   0),
       confidence: ['high', 'medium', 'low'].includes(parsed.confidence) ? parsed.confidence : 'medium',
     };
     return json({ result: out }, 200);
