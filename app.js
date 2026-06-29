@@ -1007,7 +1007,7 @@ window.addEventListener('appinstalled', () => {
     { key: 'carbsG',   label: 'Carbs',   kcalPerG: 4, color: 'var(--macro-carbs)' },
     { key: 'fatG',     label: 'Fat',     kcalPerG: 9, color: 'var(--macro-fat)' },
     { key: 'fiberG',   label: 'Fiber',   kcalPerG: 0, color: 'var(--macro-fiber)' },
-    { key: 'sugarG',   label: 'Sugar',   kcalPerG: 0, color: 'var(--macro-sugar)', isLimit: true },
+    { key: 'sugarG',   label: 'Sugar',   kcalPerG: 4, color: 'var(--macro-sugar)', isLimit: true },
   ];
 
   function computeFromPreset(cal, presetKey) {
@@ -1027,7 +1027,8 @@ window.addEventListener('appinstalled', () => {
   function caloriesFromMacros(m) {
     return Math.round((Number(m.proteinG) || 0) * 4 +
                       (Number(m.carbsG)   || 0) * 4 +
-                      (Number(m.fatG)     || 0) * 9);
+                      (Number(m.fatG)     || 0) * 9 +
+                      (Number(m.sugarG)   || 0) * 4);
   }
 
   function fmtDay(d = new Date()) {
