@@ -388,6 +388,23 @@ const DB = (() => {
   }
   function getTodayKey() { return todayKey(); }
 
+  // ----- Active workout (local-only, persists across page reloads).
+  // Stored in its own key so it survives the cloud-sync replace loop.
+  const ACTIVE_KEY = 'lift.activeWorkout.v1';
+  function getActiveWorkout() {
+    try {
+      const raw = localStorage.getItem(ACTIVE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+  function setActiveWorkout(w) {
+    if (w) localStorage.setItem(ACTIVE_KEY, JSON.stringify(w));
+    else localStorage.removeItem(ACTIVE_KEY);
+  }
+  function clearActiveWorkout() {
+    localStorage.removeItem(ACTIVE_KEY);
+  }
+
   // ----- Settings
   function getSettings() { return getState().settings; }
   function setSetting(key, value) {
@@ -435,6 +452,7 @@ const DB = (() => {
     getMetrics, setMetrics,
     getMacroTargets, setMacroTargets, getIntake, setIntake, resetIntake,
     addIntakeEntry, removeIntakeEntry, getTodayKey,
+    getActiveWorkout, setActiveWorkout, clearActiveWorkout,
     getSettings, setSetting,
     totalVolume, workoutsInRange, workoutsThisWeek,
     replaceFromCloud, pushNow,

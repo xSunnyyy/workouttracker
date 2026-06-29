@@ -131,8 +131,10 @@ window.addEventListener('appinstalled', () => {
 
   // ---------- Modal manager
   const modalRoot = $('#modal-root');
-  function openModal({ title, body, footer, fullHeight = false }) {
+  let currentModalOnClose = null;
+  function openModal({ title, body, footer, fullHeight = false, onClose = null }) {
     closeModal();
+    currentModalOnClose = onClose;
     const backdrop = el('div', { class: 'modal-backdrop', onclick: (e) => { if (e.target === backdrop) closeModal(); } });
     const modal = el('div', { class: 'modal' });
     if (fullHeight) modal.style.height = '92vh';
@@ -161,8 +163,11 @@ window.addEventListener('appinstalled', () => {
     return { backdrop, modal, body: bodyEl };
   }
   function closeModal() {
+    const cb = currentModalOnClose;
+    currentModalOnClose = null;
     modalRoot.innerHTML = '';
     document.body.style.overflow = '';
+    if (cb) try { cb(); } catch (e) { console.error(e); }
   }
 
   // ---------- HOME
@@ -177,8 +182,35 @@ window.addEventListener('appinstalled', () => {
     $('#stat-last-sub').textContent = last ? (last.name || 'workout') : 'no history yet';
     $('#stat-volume').textContent = DB.totalVolume().toLocaleString();
 
+    renderResumeBanner();
     renderPrograms();
     renderRecent();
+  }
+
+  function renderResumeBanner() {
+    let banner = $('#resume-banner');
+    if (!activeWorkout) {
+      if (banner) banner.remove();
+      return;
+    }
+    if (!banner) {
+      banner = el('div', { class: 'resume-banner glass', id: 'resume-banner' });
+      // Place above the calorie stats grid
+      const grid = $('.stats-grid');
+      grid.parentNode.insertBefore(banner, grid);
+    }
+    banner.innerHTML = '';
+    const mins = Math.floor((Date.now() - activeWorkout.startedAt) / 60000);
+    const sets = activeWorkout.exercises.reduce((a, ex) => a + ex.sets.length, 0);
+    const exCount = activeWorkout.exercises.length;
+    banner.appendChild(el('div', { class: 'resume-banner-info' }, [
+      el('div', { class: 'resume-banner-title' }, 'Workout in progress'),
+      el('div', { class: 'resume-banner-sub' },
+        `${activeWorkout.name} · ${exCount} exercise${exCount !== 1 ? 's' : ''} · ${sets} set${sets !== 1 ? 's' : ''} · ${mins}m`),
+    ]));
+    const resumeBtn = el('button', { class: 'btn btn-primary' }, 'Resume');
+    resumeBtn.onclick = () => openWorkoutModal();
+    banner.appendChild(resumeBtn);
   }
 
   // UI state for collapsed program cards — local-only, not synced.
@@ -532,13 +564,25 @@ window.addEventListener('appinstalled', () => {
   }
 
   // ---------- Workout session
-  let activeWorkout = null;
+  // activeWorkout lives in localStorage so closing the modal doesn't lose
+  // progress, and only one is allowed at a time. Sets are auto-counted —
+  // no per-set "done" toggle.
+  let activeWorkout = DB.getActiveWorkout();
+
+  function persistActive() {
+    if (activeWorkout) DB.setActiveWorkout(activeWorkout);
+    else DB.clearActiveWorkout();
+  }
 
   function startWorkout({ programId = null, routineId = null } = {}) {
+    if (activeWorkout) {
+      // Already have one running — just reopen it.
+      openWorkoutModal();
+      return;
+    }
     let name = 'Empty Workout';
     let exercises = [];
     if (routineId) {
-      const program = DB.getProgram(programId);
       const routine = DB.getRoutine(programId, routineId);
       if (routine) {
         name = routine.name;
@@ -547,7 +591,7 @@ window.addEventListener('appinstalled', () => {
           return {
             exerciseId: exId,
             exerciseName: ex ? ex.name : 'Unknown',
-            sets: [{ reps: '', weight: '', notes: '', done: false }],
+            sets: [{ reps: '', weight: '' }],
           };
         });
       }
@@ -559,65 +603,55 @@ window.addEventListener('appinstalled', () => {
       startedAt: Date.now(),
       exercises,
     };
+    persistActive();
     openWorkoutModal();
   }
 
+  // The modal is built once. Adding sets/exercises and removing them does
+  // surgical DOM updates instead of rebuilding, so scroll position stays put.
   function openWorkoutModal() {
+    if (!activeWorkout) return;
     const body = el('div');
     const summary = el('div', { class: 'workout-summary' });
     const exWrap = el('div');
     const addBtn = el('button', { class: 'add-exercise-btn' }, '+ Add exercise');
 
-    addBtn.onclick = () => {
-      openExercisePicker({
-        initial: [],
-        onConfirm: (ids) => {
-          ids.forEach((id) => {
-            const ex = DB.getExercise(id);
-            if (!ex) return;
-            activeWorkout.exercises.push({
-              exerciseId: id, exerciseName: ex.name,
-              sets: [{ reps: '', weight: '', notes: '', done: false }],
-            });
-          });
-          openWorkoutModal();
-        },
-      });
-    };
-
     const updateSummary = () => {
-      const sets = activeWorkout.exercises.reduce((acc, ex) => acc + ex.sets.filter((s) => s.done).length, 0);
+      // Every set with at least one input filled counts as a logged set.
+      // 'done' is implicit now — if you logged it, it counts.
+      const sets = activeWorkout.exercises.reduce(
+        (acc, ex) => acc + ex.sets.length, 0);
       const vol = activeWorkout.exercises.reduce((acc, ex) =>
-        acc + ex.sets.reduce((a, s) => a + (s.done ? (Number(s.weight) || 0) * (Number(s.reps) || 0) : 0), 0)
+        acc + ex.sets.reduce((a, s) =>
+          a + (Number(s.weight) || 0) * (Number(s.reps) || 0), 0)
       , 0);
-      const elapsedMs = Date.now() - activeWorkout.startedAt;
-      const mins = Math.floor(elapsedMs / 60000);
+      const mins = Math.floor((Date.now() - activeWorkout.startedAt) / 60000);
       summary.innerHTML = '';
       summary.appendChild(el('div', { class: 'summary-pill' }, [
-        el('div', { class: 'v' }, String(mins) + 'm'),
-        el('div', { class: 'l' }, 'Time'),
+        el('div', { class: 'v' }, mins + 'm'), el('div', { class: 'l' }, 'Time'),
       ]));
       summary.appendChild(el('div', { class: 'summary-pill' }, [
-        el('div', { class: 'v' }, String(sets)),
-        el('div', { class: 'l' }, 'Sets'),
+        el('div', { class: 'v' }, String(sets)), el('div', { class: 'l' }, 'Sets'),
       ]));
       summary.appendChild(el('div', { class: 'summary-pill' }, [
-        el('div', { class: 'v' }, vol.toLocaleString()),
-        el('div', { class: 'l' }, 'Volume'),
+        el('div', { class: 'v' }, vol.toLocaleString()), el('div', { class: 'l' }, 'Volume'),
       ]));
     };
-    updateSummary();
-    const summaryTimer = setInterval(updateSummary, 30000);
 
-    activeWorkout.exercises.forEach((ex, exIdx) => {
+    function buildExerciseCard(exIdx) {
+      const ex = activeWorkout.exercises[exIdx];
       const exCard = el('div', { class: 'workout-ex' });
       const head = el('div', { class: 'workout-ex-head' }, [
         el('div', { class: 'workout-ex-name' }, ex.exerciseName),
         el('button', {
           class: 'workout-ex-rm',
           onclick: () => {
-            activeWorkout.exercises.splice(exIdx, 1);
-            openWorkoutModal();
+            const idx = activeWorkout.exercises.indexOf(ex);
+            if (idx === -1) return;
+            activeWorkout.exercises.splice(idx, 1);
+            persistActive();
+            exCard.remove();
+            updateSummary();
           },
         }, 'Remove'),
       ]);
@@ -629,76 +663,144 @@ window.addEventListener('appinstalled', () => {
       table.appendChild(el('div', { class: 'h' }, `Weight (${DB.getSettings().unit})`));
       table.appendChild(el('div', { class: 'h' }, ''));
 
-      ex.sets.forEach((s, sIdx) => {
-        const num = el('button', { class: 'set-num' + (s.done ? ' done' : ''), onclick: () => {
-          s.done = !s.done;
-          openWorkoutModal();
-        } }, String(sIdx + 1));
-        const repsInput = el('input', { type: 'number', inputmode: 'numeric', placeholder: '0', value: s.reps });
-        repsInput.addEventListener('input', (e) => { s.reps = e.target.value; });
-        const weightInput = el('input', { type: 'number', inputmode: 'decimal', placeholder: '0', value: s.weight });
-        weightInput.addEventListener('input', (e) => { s.weight = e.target.value; });
+      function renumberSetLabels() {
+        const labels = table.querySelectorAll('.set-num');
+        labels.forEach((lbl, i) => { lbl.textContent = String(i + 1); });
+      }
+
+      function appendSetRow(s) {
+        // No 'done' toggle anymore — every set in the table is treated as logged.
+        const num = el('div', { class: 'set-num done' }, String(ex.sets.indexOf(s) + 1));
+        const repsInput = el('input', { type: 'text', inputmode: 'numeric', pattern: '[0-9]*', placeholder: '0', value: s.reps });
+        repsInput.addEventListener('input', () => {
+          repsInput.value = repsInput.value.replace(/[^0-9]/g, '');
+          s.reps = repsInput.value;
+          persistActive();
+          updateSummary();
+        });
+        const weightInput = el('input', { type: 'text', inputmode: 'decimal', pattern: '[0-9]*[.,]?[0-9]*', placeholder: '0', value: s.weight });
+        weightInput.addEventListener('input', () => {
+          weightInput.value = weightInput.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+          s.weight = weightInput.value;
+          persistActive();
+          updateSummary();
+        });
         const del = el('button', {
           class: 'set-del',
           onclick: () => {
-            ex.sets.splice(sIdx, 1);
-            openWorkoutModal();
+            const idx = ex.sets.indexOf(s);
+            if (idx === -1) return;
+            ex.sets.splice(idx, 1);
+            persistActive();
+            // Remove this row's 4 cells
+            [num, repsInput, weightInput, del].forEach((n) => n.remove());
+            renumberSetLabels();
+            updateSummary();
           },
           html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
         });
+        // Insert before the add-set button row by appending to the table.
         table.appendChild(num);
         table.appendChild(repsInput);
         table.appendChild(weightInput);
         table.appendChild(del);
-      });
+      }
+
+      ex.sets.forEach(appendSetRow);
       exCard.appendChild(table);
 
-      const addSet = el('button', { class: 'add-set-btn', onclick: () => {
+      const addSetBtn = el('button', { class: 'add-set-btn' }, '+ Add set');
+      addSetBtn.onclick = () => {
         const last = ex.sets[ex.sets.length - 1];
-        ex.sets.push({
+        const newSet = {
           reps: last ? last.reps : '',
           weight: last ? last.weight : '',
-          done: false,
-        });
-        openWorkoutModal();
-      } }, '+ Add set');
-      exCard.appendChild(addSet);
-      exWrap.appendChild(exCard);
-    });
+        };
+        ex.sets.push(newSet);
+        persistActive();
+        appendSetRow(newSet);
+        updateSummary();
+      };
+      exCard.appendChild(addSetBtn);
+      return exCard;
+    }
 
-    body.appendChild(summary);
-    if (!activeWorkout.exercises.length) {
-      body.appendChild(el('div', { class: 'empty', style: 'margin-bottom: 12px;' }, [
+    function renderEmptyState() {
+      if (activeWorkout.exercises.length) return null;
+      return el('div', { class: 'empty', style: 'margin-bottom: 12px;' }, [
         el('span', { class: 'emoji' }, '💪'),
         el('p', {}, 'Add an exercise to get started.'),
-      ]));
+      ]);
     }
+    let emptyEl = renderEmptyState();
+
+    addBtn.onclick = () => {
+      // The picker is itself a modal, so it replaces the workout modal.
+      // After confirm, reopen the workout modal so the user lands back in
+      // their session. Scroll resets only for this case — adding sets uses
+      // surgical updates and keeps scroll.
+      clearInterval(summaryTimer);
+      openExercisePicker({
+        initial: [],
+        onConfirm: (ids) => {
+          ids.forEach((id) => {
+            const ex = DB.getExercise(id);
+            if (!ex) return;
+            activeWorkout.exercises.push({
+              exerciseId: id, exerciseName: ex.name,
+              sets: [{ reps: '', weight: '' }],
+            });
+          });
+          persistActive();
+          openWorkoutModal();
+        },
+      });
+    };
+
+    activeWorkout.exercises.forEach((_, i) => exWrap.appendChild(buildExerciseCard(i)));
+
+    body.appendChild(summary);
+    if (emptyEl) body.appendChild(emptyEl);
     body.appendChild(exWrap);
     body.appendChild(addBtn);
 
+    updateSummary();
+    const summaryTimer = setInterval(updateSummary, 30000);
+
     const finishBtn = el('button', { class: 'btn btn-primary btn-block' }, 'Finish workout');
     finishBtn.onclick = () => {
-      clearInterval(summaryTimer);
-      const hasAnything = activeWorkout.exercises.some((ex) => ex.sets.some((s) => s.done));
-      if (!hasAnything) {
-        if (!confirm('No sets marked done. Save anyway?')) return;
+      const totalSets = activeWorkout.exercises.reduce((a, ex) => a + ex.sets.length, 0);
+      if (!totalSets) {
+        if (!confirm('No sets logged. Save anyway?')) return;
       }
-      // Trim un-done sets if user only logged some, but keep at least one for context
+      clearInterval(summaryTimer);
       DB.saveWorkout({ ...activeWorkout, completedAt: Date.now() });
       activeWorkout = null;
+      DB.clearActiveWorkout();
       closeModal();
       toast('Workout saved 🎉');
+      renderHome();
       navigate('history');
     };
-    const cancelBtn = el('button', { class: 'btn btn-ghost' }, 'Discard');
-    cancelBtn.onclick = () => {
-      if (!confirm('Discard this workout?')) return;
+    const discardBtn = el('button', { class: 'btn btn-ghost' }, 'Discard');
+    discardBtn.onclick = () => {
+      if (!confirm('Discard this workout? All progress will be lost.')) return;
       clearInterval(summaryTimer);
       activeWorkout = null;
+      DB.clearActiveWorkout();
       closeModal();
+      renderHome();
     };
 
-    openModal({ title: activeWorkout.name, body, footer: [cancelBtn, finishBtn], fullHeight: true });
+    // Closing the modal (X button or backdrop) DOES NOT discard the workout —
+    // it just hides the modal. Progress persists; user can resume from Home.
+    openModal({
+      title: activeWorkout.name,
+      body,
+      footer: [discardBtn, finishBtn],
+      fullHeight: true,
+      onClose: () => { clearInterval(summaryTimer); renderHome(); },
+    });
   }
 
   // ---------- History
