@@ -1,7 +1,7 @@
 // Service worker for MacNLift PWA — offline-first cache for the app shell only.
 // Firebase / Firestore / Google sign-in requests bypass the SW so they always
 // reach the network when online; Firestore handles its own offline cache.
-const CACHE = 'macnlift-v2';
+const CACHE = 'macnlift-v3';
 const ASSETS = [
   './',
   './index.html',
