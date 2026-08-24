@@ -393,23 +393,42 @@ window.addEventListener('appinstalled', () => {
     const isNew = !routine;
     const initName = draft?.name ?? routine?.name ?? '';
     const initNotes = draft?.notes ?? routine?.notes ?? '';
-    const initExercises = draft?.exercises ?? routine?.exercises ?? [];
+    // Entries can be either a string exerciseId (weight exercise) or an
+    // object { cardio: '<typeKey>' } (cardio block).
+    const initEntries = draft?.exercises ?? routine?.exercises ?? [];
 
     const nameInput = el('input', { type: 'text', value: initName, placeholder: 'e.g. Push Day' });
     const notesInput = el('textarea', { rows: '2', placeholder: 'Notes (optional)' });
     notesInput.value = initNotes;
 
-    let selectedIds = [...initExercises];
+    let selectedEntries = [...initEntries];
+    const isCardioEntry = (e) => e && typeof e === 'object' && e.cardio;
 
     const selectedWrap = el('div', { class: 'picker-list', style: 'margin-bottom: 12px;' });
     const renderSelected = () => {
       selectedWrap.innerHTML = '';
-      if (!selectedIds.length) {
+      if (!selectedEntries.length) {
         selectedWrap.appendChild(el('p', { class: 'row-sub', style: 'padding: 6px 0;' }, 'No exercises added yet.'));
         return;
       }
-      selectedIds.forEach((id, idx) => {
-        const ex = DB.getExercise(id);
+      selectedEntries.forEach((entry, idx) => {
+        if (isCardioEntry(entry)) {
+          const type = CARDIO_TYPES[entry.cardio] || CARDIO_TYPES.other;
+          const thumb = el('div', { class: 'picker-emoji cardio-emoji' }, '🏃');
+          selectedWrap.appendChild(el('div', { class: 'picker-item' }, [
+            thumb,
+            el('div', { style: 'flex:1' }, [
+              el('div', { class: 'name' }, type.label),
+              el('div', { class: 'muscle' }, 'Cardio'),
+            ]),
+            el('button', {
+              class: 'text-btn',
+              onclick: () => { selectedEntries.splice(idx, 1); renderSelected(); },
+            }, 'Remove'),
+          ]));
+          return;
+        }
+        const ex = DB.getExercise(entry);
         if (!ex) return;
         const thumb = el('div', { class: 'picker-emoji' });
         thumb.appendChild(bodyThumb(ex));
@@ -421,7 +440,7 @@ window.addEventListener('appinstalled', () => {
           ]),
           el('button', {
             class: 'text-btn',
-            onclick: () => { selectedIds.splice(idx, 1); renderSelected(); },
+            onclick: () => { selectedEntries.splice(idx, 1); renderSelected(); },
           }, 'Remove'),
         ]));
       });
@@ -431,18 +450,34 @@ window.addEventListener('appinstalled', () => {
     const addExBtn = el('button', { class: 'add-exercise-btn' }, '+ Add exercises');
     addExBtn.onclick = () => {
       // Capture in-progress edits so we can restore them after the picker closes.
+      const currentExerciseIds = selectedEntries.filter((e) => !isCardioEntry(e));
+      const cardioBlocks = selectedEntries.filter(isCardioEntry);
       const snapshot = {
         name: nameInput.value,
         notes: notesInput.value,
-        exercises: selectedIds,
+        exercises: selectedEntries,
       };
       openExercisePicker({
-        initial: selectedIds,
+        initial: currentExerciseIds,
         onConfirm: (ids) => {
-          snapshot.exercises = ids;
-          // Reopen the same editor (new vs. edit preserved via the original `routine` arg)
+          // Replace the exercise entries with the picker's result, keep cardio
+          // blocks appended at the end so the user's cardio choices persist.
+          snapshot.exercises = [...ids, ...cardioBlocks];
           openRoutineEditor(program, routine, snapshot);
         },
+      });
+    };
+
+    const addCardioBtn = el('button', { class: 'add-exercise-btn add-cardio-btn' }, '+ Add cardio');
+    addCardioBtn.onclick = () => {
+      const snapshot = {
+        name: nameInput.value,
+        notes: notesInput.value,
+        exercises: selectedEntries,
+      };
+      openCardioPicker((typeKey) => {
+        snapshot.exercises = [...snapshot.exercises, { cardio: typeKey }];
+        openRoutineEditor(program, routine, snapshot);
       });
     };
 
@@ -453,15 +488,15 @@ window.addEventListener('appinstalled', () => {
       el('div', { style: 'height: 18px' }),
       el('div', { class: 'ex-section-title' }, 'Exercises'),
       selectedWrap,
-      addExBtn,
+      el('div', { class: 'add-workout-row' }, [addExBtn, addCardioBtn]),
     ]);
 
     const saveBtn = el('button', { class: 'btn btn-primary btn-block' }, isNew ? 'Create routine' : 'Save changes');
     saveBtn.onclick = () => {
       const name = nameInput.value.trim();
       if (!name) { toast('Name is required'); return; }
-      if (isNew) DB.addRoutine(program.id, { name, notes: notesInput.value.trim(), exercises: selectedIds });
-      else DB.updateRoutine(program.id, routine.id, { name, notes: notesInput.value.trim(), exercises: selectedIds });
+      if (isNew) DB.addRoutine(program.id, { name, notes: notesInput.value.trim(), exercises: selectedEntries });
+      else DB.updateRoutine(program.id, routine.id, { name, notes: notesInput.value.trim(), exercises: selectedEntries });
       closeModal();
       renderPrograms();
       toast(isNew ? 'Routine created' : 'Routine updated');
@@ -678,8 +713,34 @@ window.addEventListener('appinstalled', () => {
       const routine = DB.getRoutine(programId, routineId);
       if (routine) {
         name = routine.name;
-        exercises = routine.exercises.map((exId) => {
+        exercises = routine.exercises.map((entry) => {
+          // Cardio block: { cardio: '<typeKey>' }
+          if (entry && typeof entry === 'object' && entry.cardio) {
+            const type = CARDIO_TYPES[entry.cardio] || CARDIO_TYPES.other;
+            const seed = {};
+            type.fields.forEach((f) => { seed[f.key] = ''; });
+            return {
+              exerciseId: 'cardio-' + entry.cardio,
+              exerciseName: type.label,
+              isCardio: true, cardioType: entry.cardio,
+              sets: [seed],
+            };
+          }
+          // Regular exercise id string — may still be a cardio exercise
+          // (Cardio muscle group), in which case shape it like cardio.
+          const exId = entry;
           const ex = DB.getExercise(exId);
+          if (ex && ex.muscleGroup === 'Cardio') {
+            const typeKey = CARDIO_ID_MAP[exId] || 'other';
+            const type = CARDIO_TYPES[typeKey];
+            const seed = {};
+            type.fields.forEach((f) => { seed[f.key] = ''; });
+            return {
+              exerciseId: exId, exerciseName: ex.name,
+              isCardio: true, cardioType: typeKey,
+              sets: [seed],
+            };
+          }
           return {
             exerciseId: exId,
             exerciseName: ex ? ex.name : 'Unknown',
