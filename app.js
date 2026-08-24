@@ -563,6 +563,98 @@ window.addEventListener('appinstalled', () => {
     openModal({ title: 'Pick Exercises', body, footer: [confirm], fullHeight: true });
   }
 
+  // Cardio-type picker: choose treadmill / bike / etc.
+  function openCardioPicker(onPick) {
+    const list = el('div', { class: 'cardio-picker-list' });
+    Object.entries(CARDIO_TYPES).forEach(([key, def]) => {
+      const item = el('button', { class: 'cardio-picker-item' }, [
+        el('div', { class: 'cardio-picker-name' }, def.label),
+        el('div', { class: 'cardio-picker-fields' },
+          def.fields.map((f) => f.label.replace(/ \(.+?\)/, '')).join(' · ')),
+      ]);
+      item.onclick = () => {
+        closeModal();
+        onPick(key);
+      };
+      list.appendChild(item);
+    });
+    openModal({ title: 'Add Cardio', body: list, fullHeight: false });
+  }
+
+  // ---------- Workout session
+
+  // Cardio types + their per-set fields. Each set of a cardio 'exercise' has
+  // one input per field. Fields are stored on the set object by key.
+  const CARDIO_TYPES = {
+    treadmill:   { label: 'Treadmill',        fields: [
+      { key: 'speed',      label: 'Speed',    inputmode: 'decimal' },
+      { key: 'incline',    label: 'Incline',  inputmode: 'decimal' },
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+    bike:        { label: 'Stationary bike',  fields: [
+      { key: 'resistance', label: 'Level',    inputmode: 'numeric' },
+      { key: 'distance',   label: 'Distance', inputmode: 'decimal' },
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+    rowing:      { label: 'Rowing machine',   fields: [
+      { key: 'distance',   label: 'Distance (m)', inputmode: 'decimal' },
+      { key: 'time',       label: 'Time (min)',   inputmode: 'decimal' },
+    ]},
+    elliptical:  { label: 'Elliptical',       fields: [
+      { key: 'resistance', label: 'Level',    inputmode: 'numeric' },
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+    stairs:      { label: 'Stair climber',    fields: [
+      { key: 'resistance', label: 'Level',    inputmode: 'numeric' },
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+    jump_rope:   { label: 'Jump rope',        fields: [
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+    outdoor_run: { label: 'Outdoor run',      fields: [
+      { key: 'distance',   label: 'Distance', inputmode: 'decimal' },
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+    cycling:     { label: 'Cycling',          fields: [
+      { key: 'distance',   label: 'Distance', inputmode: 'decimal' },
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+    other:       { label: 'Other cardio',     fields: [
+      { key: 'time',       label: 'Time (min)', inputmode: 'decimal' },
+    ]},
+  };
+
+  // Map seeded cardio exercise IDs to a cardio type so they use the right
+  // fields when added via the regular exercise picker.
+  const CARDIO_ID_MAP = {
+    'treadmill': 'treadmill',
+    'stationary-bike': 'bike',
+    'rowing-machine': 'rowing',
+    'elliptical': 'elliptical',
+    'stair-climber': 'stairs',
+    'jump-rope': 'jump_rope',
+    'battle-rope': 'other',
+    'sled-push': 'other',
+    'box-jump': 'other',
+  };
+
+  function isCardio(ex) {
+    return !!(ex && ex.isCardio);
+  }
+  function cardioTypeOf(ex) {
+    return (ex && ex.cardioType) || 'other';
+  }
+  function cardioSummary(ex) {
+    // "6.0 mph @ 3.0%, 30 min" — used for the 'Last time' line
+    const type = CARDIO_TYPES[cardioTypeOf(ex)];
+    if (!type || !ex.sets?.length) return '';
+    const s = ex.sets[ex.sets.length - 1];
+    return type.fields
+      .map((f) => s[f.key] ? `${s[f.key]} ${f.label.replace(/ \(.+?\)/, '')}` : null)
+      .filter(Boolean)
+      .join(' · ');
+  }
+
   // ---------- Workout session
   // activeWorkout lives in localStorage so closing the modal doesn't lose
   // progress, and only one is allowed at a time. Sets are auto-counted —
@@ -615,6 +707,8 @@ window.addEventListener('appinstalled', () => {
     const summary = el('div', { class: 'workout-summary' });
     const exWrap = el('div');
     const addBtn = el('button', { class: 'add-exercise-btn' }, '+ Add exercise');
+    const addCardioBtn = el('button', { class: 'add-exercise-btn add-cardio-btn' }, '+ Add cardio');
+    const addRow = el('div', { class: 'add-workout-row' }, [addBtn, addCardioBtn]);
 
     const updateSummary = () => {
       // Every set with at least one input filled counts as a logged set.
@@ -638,6 +732,29 @@ window.addEventListener('appinstalled', () => {
       ]));
     };
 
+    // Grab the most-recent past session for this exercise (before today's
+    // in-progress workout) so we can hint at previous reps/weights.
+    function previousSessionFor(ex) {
+      const history = DB.getExerciseHistory(ex.exerciseId);
+      // Exclude the currently-active workout (its id isn't saved yet, but
+      // we shouldn't match against it anyway).
+      const past = history.filter((e) => e.workoutId !== activeWorkout.id);
+      return past[0] || null;  // getExerciseHistory is newest-first
+    }
+    function fmtLastLine(prev, isCard) {
+      if (!prev || !prev.sets?.length) return '';
+      const ago = fmtDate(prev.date);
+      if (isCard) {
+        // Cardio: show first set's fields as a compact summary
+        return `Last: ${cardioSummary({ ...prev, cardioType: prev.cardioType })} · ${ago}`;
+      }
+      // Weight: "8×60, 8×60, 6×65"
+      const unit = DB.getSettings().unit;
+      const parts = prev.sets.map((s) =>
+        `${s.reps || '?'}×${s.weight || '?'}`).slice(0, 6);
+      return `Last: ${parts.join(', ')} ${unit} · ${ago}`;
+    }
+
     function buildExerciseCard(exIdx) {
       const ex = activeWorkout.exercises[exIdx];
       const exCard = el('div', { class: 'workout-ex' });
@@ -657,6 +774,22 @@ window.addEventListener('appinstalled', () => {
       ]);
       exCard.appendChild(head);
 
+      // Previous-session hint line
+      const prev = previousSessionFor(ex);
+      const lastLineText = prev ? fmtLastLine({ ...prev, cardioType: cardioTypeOf(ex) }, isCardio(ex)) : '';
+      if (lastLineText) {
+        exCard.appendChild(el('p', { class: 'workout-ex-last' }, lastLineText));
+      }
+
+      if (isCardio(ex)) {
+        buildCardioTable(exCard, ex, prev);
+      } else {
+        buildWeightTable(exCard, ex, prev);
+      }
+      return exCard;
+    }
+
+    function buildWeightTable(exCard, ex, prev) {
       const table = el('div', { class: 'sets-table' });
       table.appendChild(el('div', { class: 'h left' }, 'Set'));
       table.appendChild(el('div', { class: 'h' }, 'Reps'));
@@ -664,21 +797,23 @@ window.addEventListener('appinstalled', () => {
       table.appendChild(el('div', { class: 'h' }, ''));
 
       function renumberSetLabels() {
-        const labels = table.querySelectorAll('.set-num');
-        labels.forEach((lbl, i) => { lbl.textContent = String(i + 1); });
+        table.querySelectorAll('.set-num').forEach((lbl, i) => { lbl.textContent = String(i + 1); });
       }
 
       function appendSetRow(s) {
-        // No 'done' toggle anymore — every set in the table is treated as logged.
-        const num = el('div', { class: 'set-num done' }, String(ex.sets.indexOf(s) + 1));
-        const repsInput = el('input', { type: 'text', inputmode: 'numeric', pattern: '[0-9]*', placeholder: '0', value: s.reps });
+        const idx = ex.sets.indexOf(s);
+        const prevSet = prev?.sets?.[idx];
+        const phReps   = prevSet?.reps   ? String(prevSet.reps)   : '0';
+        const phWeight = prevSet?.weight ? String(prevSet.weight) : '0';
+        const num = el('div', { class: 'set-num done' }, String(idx + 1));
+        const repsInput = el('input', { type: 'text', inputmode: 'numeric', pattern: '[0-9]*', placeholder: phReps, value: s.reps });
         repsInput.addEventListener('input', () => {
           repsInput.value = repsInput.value.replace(/[^0-9]/g, '');
           s.reps = repsInput.value;
           persistActive();
           updateSummary();
         });
-        const weightInput = el('input', { type: 'text', inputmode: 'decimal', pattern: '[0-9]*[.,]?[0-9]*', placeholder: '0', value: s.weight });
+        const weightInput = el('input', { type: 'text', inputmode: 'decimal', pattern: '[0-9]*[.,]?[0-9]*', placeholder: phWeight, value: s.weight });
         weightInput.addEventListener('input', () => {
           weightInput.value = weightInput.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
           s.weight = weightInput.value;
@@ -688,18 +823,16 @@ window.addEventListener('appinstalled', () => {
         const del = el('button', {
           class: 'set-del',
           onclick: () => {
-            const idx = ex.sets.indexOf(s);
-            if (idx === -1) return;
-            ex.sets.splice(idx, 1);
+            const i = ex.sets.indexOf(s);
+            if (i === -1) return;
+            ex.sets.splice(i, 1);
             persistActive();
-            // Remove this row's 4 cells
             [num, repsInput, weightInput, del].forEach((n) => n.remove());
             renumberSetLabels();
             updateSummary();
           },
           html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
         });
-        // Insert before the add-set button row by appending to the table.
         table.appendChild(num);
         table.appendChild(repsInput);
         table.appendChild(weightInput);
@@ -712,17 +845,82 @@ window.addEventListener('appinstalled', () => {
       const addSetBtn = el('button', { class: 'add-set-btn' }, '+ Add set');
       addSetBtn.onclick = () => {
         const last = ex.sets[ex.sets.length - 1];
-        const newSet = {
-          reps: last ? last.reps : '',
-          weight: last ? last.weight : '',
-        };
+        const newSet = { reps: last ? last.reps : '', weight: last ? last.weight : '' };
         ex.sets.push(newSet);
         persistActive();
         appendSetRow(newSet);
         updateSummary();
       };
       exCard.appendChild(addSetBtn);
-      return exCard;
+    }
+
+    function buildCardioTable(exCard, ex, prev) {
+      const type = CARDIO_TYPES[cardioTypeOf(ex)] || CARDIO_TYPES.other;
+      // Grid columns: set-num + one column per field + delete
+      const table = el('div', { class: 'sets-table cardio-table' });
+      table.style.gridTemplateColumns = `32px repeat(${type.fields.length}, 1fr) 36px`;
+      table.appendChild(el('div', { class: 'h left' }, 'Set'));
+      type.fields.forEach((f) => table.appendChild(el('div', { class: 'h' }, f.label)));
+      table.appendChild(el('div', { class: 'h' }, ''));
+
+      function renumber() {
+        table.querySelectorAll('.set-num').forEach((n, i) => { n.textContent = String(i + 1); });
+      }
+
+      function appendRow(s) {
+        const idx = ex.sets.indexOf(s);
+        const prevSet = prev?.sets?.[idx];
+        const num = el('div', { class: 'set-num done' }, String(idx + 1));
+        const inputs = [];
+        type.fields.forEach((f) => {
+          const ph = prevSet && prevSet[f.key] ? String(prevSet[f.key]) : '0';
+          const inp = el('input', {
+            type: 'text',
+            inputmode: f.inputmode || 'decimal',
+            pattern: '[0-9]*[.,]?[0-9]*',
+            placeholder: ph,
+            value: s[f.key] || '',
+          });
+          inp.addEventListener('input', () => {
+            inp.value = inp.value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1');
+            s[f.key] = inp.value;
+            persistActive();
+            updateSummary();
+          });
+          inputs.push(inp);
+        });
+        const del = el('button', {
+          class: 'set-del',
+          onclick: () => {
+            const i = ex.sets.indexOf(s);
+            if (i === -1) return;
+            ex.sets.splice(i, 1);
+            persistActive();
+            [num, ...inputs, del].forEach((n) => n.remove());
+            renumber();
+            updateSummary();
+          },
+          html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>',
+        });
+        table.appendChild(num);
+        inputs.forEach((i) => table.appendChild(i));
+        table.appendChild(del);
+      }
+
+      ex.sets.forEach(appendRow);
+      exCard.appendChild(table);
+
+      const addSetBtn = el('button', { class: 'add-set-btn' }, '+ Add set');
+      addSetBtn.onclick = () => {
+        const last = ex.sets[ex.sets.length - 1] || {};
+        const newSet = {};
+        type.fields.forEach((f) => { newSet[f.key] = last[f.key] || ''; });
+        ex.sets.push(newSet);
+        persistActive();
+        appendRow(newSet);
+        updateSummary();
+      };
+      exCard.appendChild(addSetBtn);
     }
 
     function renderEmptyState() {
@@ -746,14 +944,45 @@ window.addEventListener('appinstalled', () => {
           ids.forEach((id) => {
             const ex = DB.getExercise(id);
             if (!ex) return;
-            activeWorkout.exercises.push({
-              exerciseId: id, exerciseName: ex.name,
-              sets: [{ reps: '', weight: '' }],
-            });
+            // If the picked exercise is cardio, seed the entry with a
+            // cardio type + empty cardio-shaped set so it renders the right table.
+            if (ex.muscleGroup === 'Cardio') {
+              const type = CARDIO_ID_MAP[id] || 'other';
+              const fields = CARDIO_TYPES[type].fields;
+              const seed = {};
+              fields.forEach((f) => { seed[f.key] = ''; });
+              activeWorkout.exercises.push({
+                exerciseId: id, exerciseName: ex.name,
+                isCardio: true, cardioType: type,
+                sets: [seed],
+              });
+            } else {
+              activeWorkout.exercises.push({
+                exerciseId: id, exerciseName: ex.name,
+                sets: [{ reps: '', weight: '' }],
+              });
+            }
           });
           persistActive();
           openWorkoutModal();
         },
+      });
+    };
+
+    addCardioBtn.onclick = () => {
+      clearInterval(summaryTimer);
+      openCardioPicker((typeKey) => {
+        const type = CARDIO_TYPES[typeKey];
+        const seed = {};
+        type.fields.forEach((f) => { seed[f.key] = ''; });
+        activeWorkout.exercises.push({
+          exerciseId: 'cardio-' + typeKey,
+          exerciseName: type.label,
+          isCardio: true, cardioType: typeKey,
+          sets: [seed],
+        });
+        persistActive();
+        openWorkoutModal();
       });
     };
 
@@ -762,7 +991,7 @@ window.addEventListener('appinstalled', () => {
     body.appendChild(summary);
     if (emptyEl) body.appendChild(emptyEl);
     body.appendChild(exWrap);
-    body.appendChild(addBtn);
+    body.appendChild(addRow);
 
     updateSummary();
     const summaryTimer = setInterval(updateSummary, 30000);
